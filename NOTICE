@@ -1,0 +1,12 @@
+Soceth 3D Studio
+Copyright (c) 2026 Soceth 3D Studio contributors
+
+Original standalone Studio code uses the root MIT license.
+The Blender add-on and in-process Blender worker use GPL-3.0-or-later.
+The license text is in integrations/blender_addon/LICENSE.
+The bundled ComfyUI workflow templates retain the Comfy Org MIT notice in
+integrations/comfyui_workflows/UPSTREAM-LICENSE.txt.
+
+Studio releases contain application code and the compiled frontend. Model weights,
+provider applications, Python and other installed runtime dependencies have their
+own terms and are acquired separately. See docs/LICENSES.md and the model catalog.

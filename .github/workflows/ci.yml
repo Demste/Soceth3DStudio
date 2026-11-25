@@ -1,0 +1,55 @@
+name: Windows CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Python packages, imports and unit tests
+        run: |
+          python -m pip install -r requirements.lock.txt
+          python -m pip check
+          python scripts/check_dependencies.py
+          python -c "from services.backend.main import app; print(app.title)"
+          python -m unittest discover -s tests -p 'test_*.py'
+      - name: TypeScript and build
+        working-directory: apps/desktop
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm audit --audit-level=high
+      - name: Source, history and dependencies
+        run: |
+          python scripts/audit_release.py --history
+          python scripts/audit_dependencies.py
+      - name: Validate PowerShell and package the Blender add-on
+        run: |
+          $scripts = git ls-files '*.ps1'
+          foreach ($script in $scripts) {
+              $tokens = $null
+              $errors = $null
+              [void][System.Management.Automation.Language.Parser]::ParseFile(
+                  (Join-Path (Get-Location) $script), [ref]$tokens, [ref]$errors)
+              if ($errors) { throw ($errors | Out-String) }
+          }
+          $env:SOCETH_RUNTIME = Join-Path $env:RUNNER_TEMP 'soceth'
+          python scripts/package_addon.py
+          python -c "import zipfile,os,pathlib; p=pathlib.Path(os.environ['SOCETH_RUNTIME']); assert 'soceth_blender/LICENSE' in zipfile.ZipFile(p/'Soceth-Blender-Addon.zip').namelist()"

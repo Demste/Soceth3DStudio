@@ -1,0 +1,33 @@
+name: Package Windows release
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Build the audited package
+        run: |
+          python scripts/audit_release.py --history
+          python scripts/audit_dependencies.py
+          npm --prefix apps/desktop ci --no-audit --no-fund
+          npm --prefix apps/desktop audit --audit-level=high
+          npm --prefix apps/desktop run build
+          python scripts/package_release.py --output release-output
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Soceth3DStudio-Windows
+          path: release-output/*

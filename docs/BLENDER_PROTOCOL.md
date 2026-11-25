@@ -1,0 +1,8 @@
+# Soceth Blender protocol 1
+
+The backend creates an internal JSON command for a job with `protocol_version: 1`, `kind`, `source`, `output`, project mesh and texture budgets, and operation fields. Blender is invoked with `--python-exit-code 1`, `--disable-autoexec`, an argument array, and a single generated command file. The add-on sends authenticated `POST /api/blender/poll` with `{"busy": false}`, runs the delivered command on Blender’s main thread, then sends `POST /api/blender/finish` with the job ID. A command result uses `{"ok": true, "report": ...}` or `{"ok": false, "error": ...}`. Interactive editing opens a live copy. Manual changes made to that copy can be captured as a new immutable revision. Background processing writes a separate preview and working scene.
+
+Saved mesh objects are identified by the `soceth_id` custom property. Imported objects and separated parts receive IDs. Changes produced by a command are published only after Blender returns valid outputs. Errors leave the published base revision intact. Blender scenes with unsaved edits should be saved as a separate copy before dispatching a Studio command.
+
+The local LLM produces the JSON Schema for `Proposal` in `services/backend/schemas.py`. Each operation targets one or more existing IDs. The allowlist covers transforms, proportional dimensions, material slots, PBR values, names, pivots, normals, UVs, bevel, subdivision, decimation, joins, separation, inspection, primitives, handles, and colliders. The backend checks the revision ID, operation shape and parameter ranges, and explicit confirmation for destructive actions. Subdivision and bevel are saved as editable modifiers.
+
