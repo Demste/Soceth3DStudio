@@ -78,20 +78,6 @@ def providers():
     return children
 
 
-class NativeDialogs:
-    def choose_path(self, kind):
-        import webview
-        if kind not in {"directory", "gguf", "python"}:
-            return None
-        options = {"dialog_type": webview.FileDialog.FOLDER if kind == "directory" else webview.FileDialog.OPEN}
-        if kind == "gguf":
-            options["file_types"] = ("GGUF models (*.gguf)",)
-        if kind == "python":
-            options["file_types"] = ("Python interpreter (python.exe)",)
-        files = self.window.create_file_dialog(**options)
-        return files[0] if files else None
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend-only", action="store_true")
@@ -132,9 +118,21 @@ def main():
         webview.settings["ALLOW_DOWNLOADS"] = True
         webview.settings["OPEN_EXTERNAL_LINKS_IN_BROWSER"] = True
         url = BASE + "/#session=" + TOKEN_FILE.read_text(encoding="ascii").strip()
-        dialogs = NativeDialogs()
-        dialogs.window = webview.create_window("Soceth 3D Studio", url, width=1480, height=920, min_size=(940, 610),
-                                               background_color="#161917", js_api=dialogs)
+        window = webview.create_window("Soceth 3D Studio", url, width=1480, height=920, min_size=(940, 610),
+                                       background_color="#161917")
+
+        def choose_path(kind):
+            if kind not in {"directory", "gguf", "python"}:
+                return None
+            options = {"dialog_type": webview.FileDialog.FOLDER if kind == "directory" else webview.FileDialog.OPEN}
+            if kind == "gguf":
+                options["file_types"] = ("GGUF models (*.gguf)",)
+            if kind == "python":
+                options["file_types"] = ("Python interpreter (python.exe)",)
+            files = window.create_file_dialog(**options)
+            return files[0] if files else None
+
+        window.expose(choose_path)
         webview.start(gui="edgechromium", debug=args.dev, private_mode=False, storage_path=str(RUNTIME / "webview"))
     finally:
         if server:
