@@ -1,0 +1,21 @@
+# Optional packages installed outside the shared PyTorch interpreter with --no-deps.
+accelerate==1.16.0
+antlr4-python3-runtime==4.9.3
+diffusers==0.43.0
+huggingface-hub==2.4.0
+imageio==2.37.2
+importlib-metadata==8.7.0
+jaxtyping==0.3.5
+lazy-loader==0.4
+networkx==3.5
+omegaconf==2.3.0
+psutil==7.2.2
+PyYAML==6.0.3
+scikit-image==0.26.0
+tifffile==2025.10.16
+tokenizers==0.23.3
+transformers==5.24.1
+trimesh==4.10.0
+typeguard==4.4.4
+wadler-lindig==0.1.7
+zipp==3.23.0

@@ -63,19 +63,23 @@ export type Revision = {
 };
 export type AssetDetail = Asset & {revisions: Revision[]; exports: {file: string; created: string; revision: string}[]};
 export type Source = {id: string; kind: string; name: string; body?: {seed?: number; prompt?: string; composed_prompt?: string}};
+export type CommercialGameUse = {status: 'reviewed'|'conditional'|'non_commercial'|'review_required'; terms: string};
 export type Model = {
   id: string; name: string; license: string; operation: string; provider: string;
   size: number; installed: boolean; selected: boolean; vram: string;
-  files: {source: string; sha256: string; license: string}[]; source?: string; installation?: {managed: boolean};
+  files: {source: string; sha256: string; license: string}[]; source?: string; installation?: {managed: boolean; removable: boolean};
   family: string; version: string; variant: string; precision: string; capability: string;
   dependencies: string[]; commercial: string; verification: string; attribution: string; traits: string[];
-  selection_scope?: string; source_type: string; compatibility?: Compatibility;
+  selection_scope?: string; source_type: string; compatibility?: Compatibility; commercial_game?: CommercialGameUse;
 };
 export type Execution = {profile: string; total_vram: number; free_vram: number; evidence: string; features: string[]; note: string};
 export type Compatibility = {status: 'compatible'|'setup_required'|'incompatible'; confidence: string; reasons: string[];
-  execution: Execution | null; installed: boolean; measurement?: {seconds: number; peak_system_vram: number; note: string}};
+  execution: Execution | null; installed: boolean; runtime_setup?: boolean;
+  measurement?: {seconds: number; peak_system_vram: number; note: string}};
 export type DownloadPlan = {download_bytes: number; models: {id: string; name: string; license: string;
-  commercial: string; source: string; download_bytes: number; disk_bytes: number; installed: boolean; vram: string}[]};
+  commercial: string; source: string; download_bytes: number; disk_bytes: number; installed: boolean; vram: string;
+  commercial_game?: CommercialGameUse | null; runtime_setup?: boolean}[]};
+export type RemovalPlan = {mode: 'managed'|'unregister'; recoverable_bytes: number | null; restart?: boolean};
 export type ProviderSettings = {comfy_port: number; ollama_port: number; comfy: string; comfy_python: string};
 export type ModelConfiguration = {
   catalog: Model[]; tier: string; plan: DownloadPlan; hardware_changed: boolean;

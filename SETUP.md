@@ -42,6 +42,8 @@ Temiz kurulum varsayılan olarak **%LOCALAPPDATA%\\Soceth3DStudio** kullanır. E
 
 Model seçimini tüm projelere veya açık projeye kaydedin. Tek üretim için Advanced modundaki seçiciye geçin. Art Bible, kullandığınız yerel konsept ve rekonstrüksiyon iş akışına uygulanır. Karşılaştırmada aynı giriş, seed ve Art Bible sürümünü kullanın.
 
+TRELLIS.2 INT8 ve BF16 ayrı native ComfyUI seçenekleridir. BF16 16 GiB kartta deneysel ve yalnızca 512 profilidir. TripoSR ve TripoSG için önce CUDA doğrulamasından geçen bir ComfyUI Python yorumlayıcısı kurun. Model Manager ilk kurulumda sabitlenmiş kaynak ve Python paketlerini ayrı bir çalışma klasörüne hazırlar. Bu iki model arka planı önceden kaldırılmış saydam PNG ister. TripoSR vertex rengini, TripoSG dokusuz geometriyi GLB'ye çıkarır. Art Bible doku ayarları bu modellerden yeni PBR dokuları üretmez.
+
 ## Blender, low-poly ve Unity
 
 Kurulum **Soceth-Blender-Addon.zip** dosyasını runtime konumunda üretir. Blender’da ZIP’i yükleyin, eklentiyi etkinleştirin ve Studio’nun **Models → Advanced mode → Blender connection** alanında gösterdiği yerel token dosyasını seçin. Bağlandıktan sonra Workspace’teki komut önerisini inceleyip çalıştırın.
@@ -61,7 +63,19 @@ Git ile kurulan sürümde:
 
 Güncelleme yerel değişiklik veya ayrışan dal varsa durur. Bitmemiş işleri kapatın. Uygulama kilitleri aynıysa Python ve Node bağımlılıkları yeniden yüklenmez. Kayıtlı modeller ve tercihler korunur. Blender için yeni ZIP üretildiğinde Blender’da yükleyip etkinleştirin.
 
-ZIP kurulumunda yeni paketi ve yayınlanan **.sha256** dosyasını indirin. Mevcut kurulumdan **upgrade-release.ps1 -Archive "D:\\Downloads\\Soceth3DStudio-0.2.0-Windows.zip" -Sha256 "<yayınlanan SHA-256>"** komutunu çalıştırın. Yeni sürüm ayrı dizine açılır. Eski kaynak dizini korunur.
+ZIP kurulumunda yeni paketi ve yayınlanan **.sha256** dosyasını indirin. Mevcut kurulum klasöründe, indirme yolunu kendi dosyanıza göre ayarlayıp şu komutları çalıştırın. İlk iki satır v0.2.0 betiğinin Türkçe karakterli dizinlerde çalışması için UTF-8 ayarlar.
+
+```powershell
+$env:PYTHONUTF8 = '1'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$zip = 'D:/Downloads/Soceth3DStudio-0.2.1-Windows.zip'
+$sha = ((Get-Content -LiteralPath "$zip.sha256" -Raw).Trim() -split '\s+')[0]
+.\stop.ps1
+.\upgrade-release.ps1 -Archive $zip -Sha256 $sha
+& '..\Soceth3DStudio-0.2.1\start.ps1'
+```
+
+Yeni sürüm ayrı dizine açılır. Eski kaynak dizini ve uygulama verileri korunur.
 
 Git güncellemesinden geri dönüş için runtime içindeki **last-update.json** dosyasındaki **previous** sürümü ayrı bir dalda veya worktree’de açın. ZIP güncellemesinde eski dizini kullanın. Veritabanı yedeği **data/backups** altında tutulur. Sürüm değişimi veritabanı uyumsuzluğu yaratırsa Studio kapalıyken mevcut veritabanını koruyup ilgili yedeğin bir kopyasını kullanın.
 

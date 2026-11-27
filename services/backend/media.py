@@ -19,7 +19,7 @@ def image_data(data, thumbnail=False):
             raise ValueError("Reference images need at least 32×32 pixels.")
         image = ImageOps.exif_transpose(image)
         image.thumbnail((320, 320) if thumbnail else (2048, 2048))
-        image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+        image = image.convert("RGBA" if "A" in image.getbands() or "transparency" in image.info else "RGB")
         buffer = io.BytesIO()
         image.save(buffer, "PNG")
         return buffer.getvalue()

@@ -43,7 +43,8 @@ def model_for(operation, identifier=None, project=None, configuration=None):
     if not identifier and configuration:
         identifier = configuration["recommendations"].get(operation, {}).get("model")
     model = all_models.get(identifier) if identifier else next((candidate for candidate in all_models.values()
-                          if candidate["operation"] == operation and candidate["verification"] == "measured"), None)
+                          if candidate["operation"] == operation and candidate["verification"] == "measured"
+                          and not candidate.get("manual_only")), None)
     if not model or model["operation"] != operation:
         raise ValueError("Select a registered model for this operation. A saved choice may be missing from the catalog.")
     return model
@@ -109,6 +110,27 @@ def file_location(entry, registered):
     return Path(registered[entry["path"]]) if entry["path"] in registered else safe(MODELS, entry["path"])
 
 
+def reusable_external_files(model):
+    """Reuse pinned files already verified by a local registration."""
+    paths = {}
+    expected = artifacts(model)
+    for record in query("SELECT body FROM installations", many=True):
+        body = record["body"]
+        verified = body.get("verified_files", {})
+        pinned = artifacts(body.get("model", {"files": []}))
+        for name, file in body.get("external_files", {}).items():
+            if name not in expected or expected[name] != pinned.get(name) or (MODELS / name).exists():
+                continue
+            path = Path(file)
+            try:
+                stats = path.stat()
+            except OSError:
+                continue
+            if stats.st_size == expected[name][0] and stats.st_mtime_ns == verified.get(name):
+                paths.setdefault(name, str(path))
+    return paths
+
+
 def is_ready(model, tags=None):
     if model.get("bundled_with"):
         return is_ready(CATALOG[model["bundled_with"]], tags)
@@ -142,11 +164,12 @@ def status(project=None, configuration=None):
         if not chosen and configuration:
             chosen = configuration["recommendations"].get(model["operation"], {}).get("model")
         source = ("Custom" if model.get("custom") else "Existing Local"
-                  if installed and (not old or old["body"].get("external_files") or not old["body"].get("owned")) else "Managed")
+                  if installed and (not old or not old["body"].get("owned")) else "Managed")
         rows.append({**model, "installed": installed, "selected": chosen == model["id"],
                      "selection_scope": scope if chosen == model["id"] else None, "source_type": source,
                      "size": model["disk_bytes"], "installation": ({"created": old["created"],
-                        "managed": bool(old["body"].get("owned"))} if old else None),
+                        "managed": bool(old["body"].get("owned")),
+                        "removable": bool(old["body"].get("owned")) or model["provider"] in {"comfy", "local3d"}} if old else None),
                      "compatibility": configuration["models"][model["id"]] if configuration else None})
     return rows
 
@@ -222,29 +245,52 @@ def install(model, ctx):
             raise ValueError("Ollama returned a revision other than the pinned model tag.")
         provenance = {"model": model, "digest": tags[model["tag"]]["digest"], "owned": not existed or bool(previous and previous["body"]["owned"]),
                       "installation_path": os.getenv("SOCETH_OLLAMA_MODELS", str(Path.home() / ".ollama/models"))}
-    elif model["provider"] == "comfy" and not model.get("bundled_with"):
+    elif model["provider"] in {"comfy", "local3d"} and not model.get("bundled_with"):
+        if model["provider"] == "local3d":
+            from .local3d import provision
+            provision(model, ctx)
         if is_ready(model):
             return {"model": model, "reused": True}
         MODELS.mkdir(parents=True, exist_ok=True)
+        external = reusable_external_files(model)
+        local_files = [item for item in model["files"] if item["path"] not in external]
         needed = 0
-        for item in model["files"]:
+        for item in local_files:
             path = safe(MODELS, item["path"])
             partial = path.with_name(path.name + ".partial")
             if not path.is_file():
                 needed += max(0, item["size"] - (partial.stat().st_size if partial.exists() else 0))
         if shutil.disk_usage(MODELS).free < needed + 1024**3:
             raise ValueError("Free disk space is insufficient for this model and its working files.")
-        total = sum(item["size"] for item in model["files"])
+        total = sum(item["size"] for item in local_files)
         old = query("SELECT body FROM installations WHERE id=?", (model["id"],))
-        owned = set(old["body"].get("owned", [])) if old else set()
+        previous = old["body"] if old else {}
+        same_root = Path(previous.get("installation_path", MODELS)).resolve() == MODELS.resolve()
+        previous_pins = artifacts(previous.get("model", {"files": []}))
+        previous_verified = previous.get("verified_files", {})
+        owned = {item["path"] for item in local_files if same_root and item["path"] in previous.get("owned", [])
+                 and previous_pins.get(item["path"]) == (item["size"], item["sha256"])}
+        verified = {}
         prior = 0
-        for item in model["files"]:
-            if download(item, safe(MODELS, item["path"]), ctx, prior, total):
-                owned.add(item["path"])
-                record_installation(model["id"], {"model": model, "owned": sorted(owned), "installation_path": str(MODELS)})
+        for item in local_files:
+            name = item["path"]
+            path = safe(MODELS, name)
+            downloaded = download(item, path, ctx, prior, total)
+            verified[name] = path.stat().st_mtime_ns
+            if downloaded:
+                owned.add(name)
+                record_installation(model["id"], {"model": model, "owned": sorted(owned),
+                                    "installation_path": str(MODELS), "verified_files": verified})
+            elif previous_verified.get(name) != verified[name]:
+                owned.discard(name)
             prior += item["size"]
-        verified = {item["path"]: safe(MODELS, item["path"]).stat().st_mtime_ns for item in model["files"]}
+        verified.update({name: Path(file).stat().st_mtime_ns for name, file in external.items()})
+        if model["provider"] == "local3d":
+            from .local3d import model_files
+            model_files(model, external)
         provenance = {"model": model, "owned": sorted(owned), "installation_path": str(MODELS), "verified_files": verified}
+        if external:
+            provenance["external_files"] = external
     else:
         raise ValueError("This component comes from its parent workflow or application installation.")
     record_installation(model["id"], provenance)
@@ -257,20 +303,73 @@ def record_installation(identifier, provenance):
                      (identifier, json.dumps(provenance), now()))
 
 
+def managed_removal(model, installation, other_installations):
+    root = MODELS.resolve()
+    if Path(installation.get("installation_path", MODELS)).resolve() != root:
+        return [], {}
+    external_paths = {Path(path).resolve() for row in [installation, *other_installations.values()]
+                      for path in row.get("external_files", {}).values()}
+    pinned = artifacts(model)
+    paths, transfers = [], {}
+    for name in set(installation.get("owned", [])) & pinned.keys():
+        path = root / name
+        if path.resolve() != path or path in external_paths or not path.is_file():
+            continue
+        size, _ = pinned[name]
+        stats = path.stat()
+        if stats.st_size != size or installation.get("verified_files", {}).get(name) != stats.st_mtime_ns:
+            continue
+        users = [key for key, row in other_installations.items()
+                 if name in artifacts(row.get("model", {"files": []}))
+                 and name not in row.get("external_files", {})
+                 and row.get("model", {}).get("provider") in {"comfy", "local3d"}
+                 and Path(row.get("installation_path", MODELS)).resolve() == root]
+        if users:
+            transfers.setdefault(users[0], set()).add(name)
+        else:
+            paths.append(path)
+    return paths, transfers
+
+
+def removal_plan(model):
+    old = installation_for(model)
+    if not old:
+        raise ValueError("This model has no Studio installation or registration to remove.")
+    body = old["body"]
+    if model["provider"] == "ollama" and body.get("owned"):
+        if not is_ready(model):
+            raise ValueError("The current Ollama tag differs from the managed revision or is unavailable.")
+        return {"mode": "managed", "recoverable_bytes": None}
+    if model["provider"] not in {"comfy", "local3d"}:
+        raise ValueError("This local Ollama model is managed outside Studio.")
+    others = {row["id"]: row["body"] for row in query("SELECT id,body FROM installations WHERE id<>?",
+              (model["id"],), many=True)}
+    paths, _ = managed_removal(model, body, others)
+    plan = {"mode": "managed" if body.get("owned") else "unregister",
+            "recoverable_bytes": sum(path.stat().st_size for path in paths)}
+    if body.get("external_files") and model["provider"] == "comfy":
+        plan["restart"] = True
+    return plan
+
+
 def remove(model):
-    installation = query("SELECT body FROM installations WHERE id=?", (model["id"],))
-    if not installation or not installation["body"].get("owned"):
-        raise ValueError("Only model files downloaded and managed by Soceth can be removed here.")
-    if model["provider"] == "ollama" and installation["body"]["owned"]:
+    key = model["id"]
+    plan = removal_plan(model)
+    if model["provider"] == "ollama":
         with local() as client:
             client.request("DELETE", OLLAMA + "/api/delete", json={"model": model["tag"]}).raise_for_status()
-    if model["provider"] == "comfy":
-        shared = {entry["path"] for other in CATALOG.values() if other["id"] != model["id"]
-                  and installation_for(other) for entry in other["files"]}
-        for name in installation["body"]["owned"]:
-            if name not in shared:
-                safe(MODELS, name).unlink(missing_ok=True)
     with db() as conn:
-        conn.execute("DELETE FROM installations WHERE id=?", (model["id"],))
-    return {"removed": model["id"]}
+        conn.execute("BEGIN IMMEDIATE")
+        if model["provider"] in {"comfy", "local3d"}:
+            rows = {row["id"]: json.loads(row["body"]) for row in conn.execute("SELECT id,body FROM installations")}
+            installation = rows.pop(key)
+            paths, transfers = managed_removal(model, installation, rows)
+            for identifier, files in transfers.items():
+                other = rows[identifier]
+                other["owned"] = sorted(set(other.get("owned", [])) | files)
+                conn.execute("UPDATE installations SET body=? WHERE id=?", (json.dumps(other), identifier))
+            for path in paths:
+                path.unlink(missing_ok=True)
+        conn.execute("DELETE FROM installations WHERE id=?", (key,))
+    return {"removed": key, "restart": plan.get("restart", False)}
 

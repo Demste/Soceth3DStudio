@@ -1,11 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Download, FolderOpen, Search, Trash2 } from 'lucide-react';
-import { DownloadPlan, Job, Model, ModelConfiguration, ProviderSettings, System, api, gib, json, media, stageActive } from './api';
+import { DownloadPlan, Job, Model, ModelConfiguration, ProviderSettings, RemovalPlan, System, api, gib, json, media, stageActive } from './api';
 import { Hardware, JobList } from './StudioPanels';
 
 const capabilities: Record<string, string> = {
   generate: 'Image to 3D', concept: 'Text to image', interpret: 'Local AI editing',
   preprocess: 'Image preprocessing', mesh: 'Mesh processing', text_to_3d: 'Text to 3D',
+};
+const gameLicense = {
+  reviewed: 'Commercial Game Use — Reviewed',
+  conditional: 'Commercial Game Use — Conditional',
+  non_commercial: 'Non-Commercial Only',
+  review_required: 'License Review Required',
 };
 type Picker = Window & {pywebview?: {api: {choose_path(kind: string): Promise<string | null>}}};
 
@@ -24,7 +30,7 @@ export function ModelManager({configuration, system, jobs, project, refresh, que
   const [text, setText] = useState('');
   const [plan, setPlan] = useState<DownloadPlan>();
   const [scope, setScope] = useState<'global'|'project'>('global');
-  const [remove, setRemove] = useState<string>();
+  const [remove, setRemove] = useState<(RemovalPlan & {id: string})>();
   const busy = jobs.some(job => !job.project && stageActive(job));
   const recommended = Object.values(configuration.recommendations).flatMap(row => row.model ? [row.model] : []);
   const candidates = new Set(Object.values(configuration.recommendations).flatMap(row => row.candidates));
@@ -79,7 +85,9 @@ export function ModelManager({configuration, system, jobs, project, refresh, que
       {plan && <div className="proposal stack tight" aria-label="Download plan">
         <h3>Download plan · {gib(plan.download_bytes)}</h3>
         {plan.models.map(row => <div key={row.id} className="material">
-          <strong>{row.name}</strong><p className="small">{gib(row.download_bytes)} download · {gib(row.disk_bytes)} storage · {row.license} · {row.commercial}</p>
+          <strong>{row.name}</strong><p className="small">{gib(row.download_bytes)} download · {gib(row.disk_bytes)} storage · {row.license} · {row.commercial_game ? gameLicense[row.commercial_game.status] : row.commercial}</p>
+          {row.commercial_game && <p className="small">{row.commercial_game.terms}</p>}
+          {row.runtime_setup && <p className="small">First install also downloads and verifies the isolated Python dependencies and upstream adapter source.</p>}
           <p className="small">{row.vram}</p>{/^https:\/\//.test(row.source) && <a href={row.source}>Upstream terms and source</a>}
         </div>)}
         <div className="row wrap"><button onClick={() => setPlan(undefined)}>Close</button>
@@ -99,25 +107,53 @@ export function ModelManager({configuration, system, jobs, project, refresh, que
       {Array.from(families).map(([family, grouped]) => <section className="stack tight" key={family}>
         <h3>{family}</h3><div className="model-grid">{grouped?.map(model => {
           const compatible = model.compatibility?.status === 'compatible';
+          const runtimeSetup = model.compatibility?.runtime_setup;
+          const ready = compatible && !runtimeSetup;
+          const imageTo3D = model.operation === 'generate';
           const selectable = ['generate','concept','interpret'].includes(model.operation);
           const selected = model.selected && model.selection_scope === scope;
-          const status = model.compatibility?.status === 'incompatible' ? 'Incompatible' : model.installed ? 'Installed' : 'Available';
+          const status = imageTo3D ? model.installed ? 'Installed' : 'Not installed' :
+            model.compatibility?.status === 'incompatible' ? 'Incompatible' : model.installed ? 'Installed' : 'Available';
           return <article className="panel model-card" key={model.id}>
             <div className="row between wrap"><strong>{model.variant}</strong><span className={compatible && model.installed ? 'pill green' : 'pill'}>{status}</span></div>
             <p className="small">{capabilities[model.operation]} · {model.source_type} · {model.compatibility?.execution?.profile || 'No profile'}</p>
             <p className="small">{model.license} · {gib(model.size)} · {model.vram}</p>
+            {imageTo3D && <>
+              <p className="small">{compatible ? (runtimeSetup ? 'Prepare local runtime' : model.installed ? 'Ready to run' : 'Compatible for installation') :
+                model.compatibility?.status === 'setup_required' ? 'Provider setup required' : 'Unavailable on current configuration'}
+                {' · '}{model.provider === 'comfy' ? 'Native ComfyUI' : model.provider === 'local3d' ? 'Isolated local PyTorch' : model.provider}
+                {' · '}{model.compatibility?.measurement ? 'Measured on matching GPU configuration' :
+                  model.verification === 'experimental' ? 'Experimental' : 'Inference unverified for this configuration'}</p>
+              <p className="small">{gameLicense[model.commercial_game?.status ?? 'review_required']}</p>
+              {model.traits.map(trait => <p className="small" key={trait}>{trait}</p>)}
+            </>}
             {recommended.includes(model.id) && <span className="pill green">Recommended</span>}
             {candidates.has(model.id) && <span className="pill">Comparison candidate</span>}
             <div className="row wrap">
-              {selectable && model.installed && <button disabled={!compatible || selected} onClick={() => setModel(model.id, model.operation)}>{selected ? 'Selected' : 'Select'}</button>}
+              {selectable && model.installed && <button disabled={!ready || selected} onClick={() => setModel(model.id, model.operation)}>{selected ? 'Selected' : 'Select'}</button>}
+              {runtimeSetup && compatible && <button disabled={busy} onClick={() =>
+                queue('/models/' + model.id + '/install', json('POST'))}>Prepare runtime</button>}
               {selectable && !model.installed && model.source_type === 'Managed' && <button disabled={busy || model.compatibility?.status === 'incompatible'}
                 onClick={() => offer([model.id])}><Download size={15}/>Download Model</button>}
               {selected && <button onClick={() => setModel(null, model.operation)}>Clear override</button>}
-              {system?.advanced && model.installation?.managed && <button disabled={busy} aria-label={'Remove ' + model.name} onClick={() => setRemove(model.id)}><Trash2 size={15}/></button>}
+              {model.installation?.removable && (imageTo3D || system?.advanced) &&
+                <button disabled={busy} aria-label={'Remove ' + model.name} onClick={() =>
+                  void api<RemovalPlan>('/models/' + model.id + '/removal-plan')
+                    .then(value => setRemove({...value, id: model.id})).catch(error)}><Trash2 size={15}/></button>}
             </div>
-            {remove === model.id && <div className="row wrap"><button onClick={() => setRemove(undefined)}>Keep model</button>
-              <button className="danger" onClick={() => {queue('/models/' + model.id, json('DELETE')); setRemove(undefined);}}>Remove managed files</button></div>}
+            {remove?.id === model.id && <div className="dialog-shade" onKeyDown={event => {if (event.key === 'Escape') setRemove(undefined);}}>
+              <div className="dialog stack" role="dialog" aria-modal="true" aria-label={'Remove ' + model.name}>
+                <h2>Remove {model.name}</h2>
+                <p className="small">{remove.recoverable_bytes === null ? 'Ollama manages its shared storage.' :
+                  gib(remove.recoverable_bytes) + ' recoverable disk space'}
+                  {remove.restart ? ' · Restart Studio to refresh provider paths' : ''}</p>
+                <div className="row wrap"><button autoFocus onClick={() => setRemove(undefined)}>Keep model</button>
+                  <button className="danger" disabled={busy} onClick={() => {queue('/models/' + model.id, json('DELETE')); setRemove(undefined);}}>
+                    {remove.mode === 'unregister' ? 'Remove registration' : 'Remove managed files'}</button></div>
+              </div>
+            </div>}
             <details><summary>Compatibility and evidence</summary><div className="stack tight detail-body">
+              {model.commercial_game && <p className="small">{model.commercial_game.terms}</p>}
               {model.compatibility?.reasons.map(reason => <p key={reason} className="small">{reason}</p>)}
               {model.compatibility?.measurement && <p className="small">Prior measured run · {model.compatibility.measurement.seconds} s ·
                 {' '}{model.compatibility.measurement.peak_system_vram} MiB system GPU peak. {model.compatibility.measurement.note}</p>}
@@ -167,8 +203,8 @@ function LocalModels({configuration, queue, busy, error}: {
   const [license, setLicense] = useState('');
   return <details className="panel"><summary>Use Existing Local Model / Register Custom Model</summary>
     <div className="stack detail-body">
-      <label>Native ComfyUI variant<select value={model} onChange={e => setModel(e.target.value)}><option value="">Select a variant</option>
-        {configuration.catalog.filter(row => row.provider === 'comfy' && ['generate','concept'].includes(row.operation)).map(row =>
+      <label>Local generation variant<select value={model} onChange={e => setModel(e.target.value)}><option value="">Select a variant</option>
+        {configuration.catalog.filter(row => ['comfy','local3d'].includes(row.provider) && ['generate','concept'].includes(row.operation)).map(row =>
           <option key={row.id} value={row.id}>{row.name}{configuration.existing.matches.includes(row.id) ? ' · files detected' : ''}</option>)}</select></label>
       <div className="row"><label>Model or Hugging Face snapshot directories<textarea value={path} onChange={e => setPath(e.target.value)} placeholder="Optional paths, one per line"/></label>
         <button onClick={() => pickPath('directory', value => setPath(current => [current, value].filter(Boolean).join('\n')), error)}

@@ -14,7 +14,8 @@ $python = Join-Path $paths.runtime 'app-venv/Scripts/python.exe'
 if (-not (Test-Path -LiteralPath $python)) { throw 'Finish setup in the existing version first.' }
 $backup = Join-Path $paths.data ("backups/pre-release-" + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.sqlite3')
 Invoke-SocethChecked $python @((Join-Path $PSScriptRoot 'scripts/backup_store.py'),(Join-Path $paths.data 'studio.sqlite3'),$backup)
-$next = & $python (Join-Path $PSScriptRoot 'scripts/unpack_release.py') (Resolve-Path -LiteralPath $Archive).Path $Destination $Sha256
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$next = & $python -X utf8 (Join-Path $PSScriptRoot 'scripts/unpack_release.py') (Resolve-Path -LiteralPath $Archive).Path $Destination $Sha256
 if ($LASTEXITCODE -ne 0) { throw 'The release could not be staged. The previous installation remains available.' }
 & (Join-Path $next 'setup.ps1') -Models Skip -NoLaunch
 Write-Host "Run start.ps1 in $next. Keep the previous directory for rollback."

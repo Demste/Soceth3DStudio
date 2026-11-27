@@ -10,7 +10,7 @@ from .core import ROOT, atomic, db, file_record, now, project_file, query, uid, 
 from .media import image_data, validate_glb
 from .providers.inference import PROVIDERS, compose
 from .providers.models import CATALOG, install, is_ready, model_for, remove
-from .providers.discovery import register_existing, register_ollama
+from .providers.discovery import check_candidate_install, register_existing, register_ollama
 from .schemas import Bible, DESTRUCTIVE, Proposal
 
 
@@ -202,6 +202,8 @@ def run(ctx, job):
     project = job["project"]
     if kind in {"install", "remove"}:
         model = CATALOG[payload["model"]]
+        if kind == "install":
+            check_candidate_install(model)
         result = install(model, ctx) if kind == "install" else remove(model)
         return persist(ctx, lambda _: result)
     if kind == "register":

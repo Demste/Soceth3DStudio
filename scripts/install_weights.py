@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from services.backend.core import init
+from services.backend.providers.discovery import check_candidate_install
 from services.backend.providers.models import CATALOG, install
 
 
@@ -37,7 +38,9 @@ def main():
     failed = False
     for identifier in identifiers:
         try:
-            result = install(CATALOG[identifier], Terminal(identifier))
+            model = CATALOG[identifier]
+            check_candidate_install(model)
+            result = install(model, Terminal(identifier))
             location = result.get("installation_path", "existing model location")
             print(f"[{identifier}] Verified installation in {location}", flush=True)
         except Exception as error:

@@ -14,7 +14,8 @@ def evaluate(model, hardware, dependencies, installed=False, requested="AUTO"):
     cards = hardware["gpus"]
     supported = [card for card in cards if compute(card) >= tuple(map(int, model["min_compute"].split(".")))]
     runtime = hardware["runtime"]
-    if model["provider"] == "comfy" and runtime["status"] == "verified":
+    cuda_provider = model["provider"] in {"comfy", "local3d"}
+    if cuda_provider and runtime["status"] == "verified":
         verified = {(row["name"], row["capability"]) for row in runtime["devices"] if row["ok"]}
         supported = [card for card in supported if (card["name"], card["capability"]) in verified]
     ram_ok = not hardware["ram"]["total"] or hardware["ram"]["total"] >= model["min_ram"] - 256
@@ -36,7 +37,7 @@ def evaluate(model, hardware, dependencies, installed=False, requested="AUTO"):
         reasons.append("Insufficient system memory for this configuration.")
     elif not options:
         reasons.append("GPU architecture, total VRAM, or currently free VRAM falls below the catalog allowance.")
-    if model["provider"] == "comfy" and runtime["status"] == "failed":
+    if cuda_provider and runtime["status"] == "failed":
         reasons.append("The selected PyTorch runtime failed the CUDA kernel check.")
     if missing:
         reasons.append("Requires: " + ", ".join(missing))
@@ -44,8 +45,8 @@ def evaluate(model, hardware, dependencies, installed=False, requested="AUTO"):
         reasons.append("Review the model terms before commercial use.")
     execution, card, offload = max(options, key=lambda row: ORDER[row[0]["profile"]], default=(None, None, False))
     possible = ram_ok and bool(options)
-    compatible = possible and not missing and not (model["provider"] == "comfy" and runtime["status"] == "failed")
-    runtime_failed = model["provider"] == "comfy" and runtime["status"] == "failed"
+    runtime_failed = cuda_provider and runtime["status"] == "failed"
+    compatible = possible and not missing and not runtime_failed
     status = "compatible" if compatible else "setup_required" if possible and missing and not runtime_failed else "incompatible"
     confidence = execution["evidence"] if execution else model["verification"]
     if confidence == "measured" and card and (card["capability"] != "8.6" or card["total"] != 8192) and model["provider"] != "blender":
@@ -70,7 +71,7 @@ def recommend(models, hardware, dependencies, installed, requested="AUTO", polic
     recommendations = {}
     for operation in TASKS:
         candidates = [model for model in models.values() if model["operation"] == operation]
-        eligible = [model for model in candidates if model["verification"] == "measured"
+        eligible = [model for model in candidates if model["verification"] == "measured" and not model.get("manual_only")
                     and model["commercial"] in {"permissive", "conditional"}
                     and states[model["id"]]["status"] != "incompatible"]
 

@@ -10,12 +10,16 @@ from pathlib import Path
 
 import httpx
 
-from ..core import setting, set_setting, write_json
+from ..core import safe, setting, set_setting, write_json
 from ..hardware import FLAGS, inspect, track
 from . import models
+from . import local3d
 from .recommendations import PRIMARY, recommend
 
 NODE_SETS = {"pixal3d_nodes": ("Trellis2ShapeStage", "Trellis2UpsampleStage", "Save3DAdvanced"),
+             "trellis2_nodes": ("Trellis2Conditioning", "Trellis2ShapeStage", "Trellis2UpsampleStage",
+                                "UnwrapMesh", "BakeTextureFromVoxel", "BakeNormalMapFromMesh",
+                                "BakeAmbientOcclusion", "Save3DAdvanced"),
              "flux_nodes": ("Flux2Scheduler", "EmptyFlux2LatentImage", "CLIPLoader")}
 GGUF_FAMILIES = {"qwen2", "qwen3", "llama", "mistral", "gemma3", "phi3"}
 
@@ -41,20 +45,32 @@ def configuration(project=None, *, probe=True, remember=True):
         nodes = {}
         if comfy:
             futures = {node: pool.submit(supports, models.COMFY, "/object_info/" + node)
-                       for group in NODE_SETS.values() for node in group}
+                       for node in {node for group in NODE_SETS.values() for node in group}}
             nodes = {node: future.result().get(node) for node, future in futures.items()}
     deps = {"comfy": bool(comfy), "ollama": bool(ollama), "blender": bool(hardware["software"]["blender"]),
-            "cuda": hardware["runtime"]["status"] == "verified"}
+            "cuda": hardware["runtime"]["status"] == "verified",
+            "local3d_python": bool(hardware["runtime"].get("python"))}
     deps.update({key: all(nodes.get(node) and not nodes[node].get("python_module", "").startswith("custom_nodes")
                          for node in group) for key, group in NODE_SETS.items()})
     choices = models.registry()
     installed = {key for key, row in choices.items() if models.is_ready(row, tags)}
     state = recommend(choices, hardware, deps, installed, setting("profile", "AUTO"),
                       setting("recommendation_policy"))
+    for key, row in choices.items():
+        if row["provider"] == "local3d" and key in installed:
+            state["models"][key]["runtime_setup"] = not local3d.ready(row["workflow"], hardware["runtime"].get("python"))
     state.update(hardware=hardware, dependencies=deps, tags=tags, hardware_changed=track(hardware) if remember else False,
                  selections={kind: models.selection(kind, project) for kind in PRIMARY})
     state["plan"] = download_plan([state["recommendations"][key]["model"] for key in PRIMARY], tags)
     return state
+
+
+def check_candidate_install(model, state=None):
+    if model.get("manual_only"):
+        state = configuration(remember=False) if state is None else state
+        readiness = state["models"][model["id"]]
+        if readiness["status"] != "compatible":
+            raise ValueError("This optional candidate requires a compatible local setup. " + " ".join(readiness["reasons"]))
 
 
 def default_roots(hardware, entries=()):
@@ -67,11 +83,18 @@ def default_roots(hardware, entries=()):
     return list(dict.fromkeys(str(root.resolve()) for root in roots if root.is_dir()))
 
 
-def locate(artifact, roots):
+def locate(artifact, roots, *, standalone=False):
     relative = Path(artifact["path"])
     for directory in roots:
         root = Path(directory)
-        for path in (root / relative, root / "split_files" / relative, root / relative.name):
+        if standalone:
+            source_path = Path(artifact["source"].split("/" + artifact["revision"] + "/", 1)[-1])
+            local = (root / relative, root.joinpath(*relative.parts[1:]))
+            if not source_path.is_absolute() and ".." not in source_path.parts:
+                local += (root / source_path,)
+        else:
+            local = (root / relative, root / "split_files" / relative, root / relative.name)
+        for path in local:
             if path.is_file() and path.stat().st_size == artifact["size"]:
                 return path
     return None
@@ -83,7 +106,8 @@ def discover(hardware, tags, entries=()):
     for row in models.CATALOG.values():
         if row["operation"] not in PRIMARY:
             continue
-        if row["provider"] == "comfy" and all(locate(artifact, roots) for artifact in row["files"]):
+        if row["provider"] in {"comfy", "local3d"} and all(
+                locate(artifact, roots, standalone=row["provider"] == "local3d") for artifact in row["files"]):
             matching.append(row["id"])
         if row["provider"] == "ollama" and models.is_ready(row, tags):
             matching.append(row["id"])
@@ -95,22 +119,28 @@ def discover(hardware, tags, entries=()):
 def register_existing(model, paths, ctx):
     if models.is_ready(model):
         return {"model": model, "reused": True}
-    if model["provider"] != "comfy" or model["operation"] not in PRIMARY:
-        raise ValueError("Select a native ComfyUI variant or register an existing Ollama tag.")
+    if model["provider"] not in {"comfy", "local3d"} or model["operation"] not in PRIMARY:
+        raise ValueError("Select a supported local generation variant or register an existing Ollama tag.")
+    standalone = model["provider"] == "local3d"
     roots = default_roots(inspect(), paths)
     external, verified = {}, {}
     for entry in model["files"]:
-        path = locate(entry, roots)
+        path = locate(entry, roots, standalone=standalone)
         if not path:
             raise ValueError(f"Missing {entry['path']}. Supply compatible ComfyUI model roots or Hugging Face snapshot directories.")
         ctx.stage("Verifying " + path.name)
         if models.digest(path, ctx) != entry["sha256"]:
             raise ValueError(f"{path.name} differs from the pinned architecture and variant.")
-        external[entry["path"]] = str(path)
+        if path.resolve() != safe(models.MODELS, entry["path"]):
+            external[entry["path"]] = str(path.absolute())
         verified[entry["path"]] = path.stat().st_mtime_ns
-    result = {"model": model, "owned": [], "external_files": external, "verified_files": verified}
+    if standalone:
+        local3d.model_files(model, external)
+        local3d.provision(model, ctx)
+    result = {"model": model, "owned": [], "external_files": external, "verified_files": verified,
+              "installation_path": str(models.MODELS)}
     models.record_installation(model["id"], result)
-    return {"model": model, "source": "Existing Local", "restart": True}
+    return {"model": model, "source": "Existing Local", "restart": not standalone}
 
 
 def download_plan(identifiers, tags=None):
@@ -122,18 +152,23 @@ def download_plan(identifiers, tags=None):
         size = 0
         if not installed and item["provider"] == "ollama":
             size = item["disk_bytes"]
-        elif not installed and item["provider"] == "comfy":
+        elif not installed and item["provider"] in {"comfy", "local3d"}:
+            external = models.reusable_external_files(item)
             for artifact in item["files"]:
-                if artifact["sha256"] in files:
+                if artifact["path"] in external or artifact["sha256"] in files:
                     continue
                 files.add(artifact["sha256"])
                 path = models.MODELS / artifact["path"]
                 if not path.is_file() or path.stat().st_size != artifact["size"]:
-                    size += artifact["size"]
+                    partial = path.with_name(path.name + ".partial")
+                    offset = partial.stat().st_size if partial.is_file() else 0
+                    size += artifact["size"] - (offset if offset <= artifact["size"] else 0)
         cumulative += size
         rows.append({"id": key, "name": item["name"], "license": item["license"], "commercial": item["commercial"],
                      "source": item["source"], "download_bytes": size, "disk_bytes": item["disk_bytes"],
-                     "vram": item["vram"], "installed": installed, "provider": item["provider"]})
+                     "vram": item["vram"], "installed": installed, "provider": item["provider"],
+                     "commercial_game": item.get("commercial_game"),
+                     "runtime_setup": item["provider"] == "local3d"})
     return {"models": rows, "download_bytes": cumulative}
 
 
@@ -254,6 +289,8 @@ def comfy_paths():
     locations = {"soceth": {"base_path": str(models.MODELS), "is_default": True}}
     slot = 0
     for model in models.CATALOG.values():
+        if model["provider"] != "comfy":
+            continue
         installation = models.installation_for(model)
         if not installation:
             continue

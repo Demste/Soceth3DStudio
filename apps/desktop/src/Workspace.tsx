@@ -40,6 +40,8 @@ export function Generation({bible, sources, models, upload, submit, busy, chosen
       <option value="">Project default</option>{models.filter(item => item.operation === operation).map(item =>
         <option key={item.id} value={item.id}>{item.name}{item.installed ? '' : ' · download required'}</option>)}</select>;
   const chosenModel = (kind: string) => models.find(item => item.operation === kind && item.selected)?.name || 'Automatic recommendation';
+  const active3d = models.find(item => item.operation === 'generate' &&
+    (advanced && model3d ? item.id === model3d : item.selected));
   const sampling = {...(advanced && samplingSize && {concept_size:Number(samplingSize)}),
     ...(advanced && samplingSteps && {concept_steps:Number(samplingSteps)})};
   return <section className="panel stack generation"><h2><Sparkles size={17}/>Create asset</h2>
@@ -73,6 +75,7 @@ export function Generation({bible, sources, models, upload, submit, busy, chosen
       {advanced ? <><label>Image-to-3D model{pick('generate', model3d, setModel3d)}</label>
       <label>Seed (optional)<input type="number" min="0" max={Number.MAX_SAFE_INTEGER} value={seed} onChange={e => setSeed(e.target.value)} placeholder="Random"/></label></>
       : <p className="small">{chosenModel('generate')}</p>}
+      {active3d?.provider === 'local3d' && active3d.traits.map(trait => <p className="small" key={trait}>{trait}</p>)}
       <button className="primary" disabled={!selected || !category.trim() || busy} onClick={() => submit('generate', {...request,file:selected?.id, model:advanced && model3d || undefined})}>
         <Sparkles size={17}/>{mode === 'concept' || selected?.kind === 'concept' ? 'Approve concept & generate 3D' : 'Generate 3D'}</button>
     </>}

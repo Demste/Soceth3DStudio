@@ -11,6 +11,7 @@ from websockets.sync.client import connect
 
 from ..core import gpu_status, profile, uid
 from ..schemas import Proposal
+from .local3d import Local3D
 from .models import COMFY, OLLAMA, is_ready, local
 from .workflows import flux_graph, pixal_graph, validate_graph
 
@@ -59,7 +60,7 @@ class Comfy:
             raise ValueError(f"{model['name']} is missing or unverified. Install it in Model Manager.")
         operation = model["operation"]
         workflow = model["workflow"]
-        if workflow not in {"pixal3d", "flux-klein"}:
+        if workflow not in {"pixal3d", "trellis2", "flux-klein"}:
             raise ValueError("No native adapter is registered for this ComfyUI workflow.")
         gpus = gpu_status()
         execution = inputs.get("execution") or model["configs"][0]
@@ -78,7 +79,7 @@ class Comfy:
             except httpx.ConnectError as error:
                 raise RuntimeError(f"ComfyUI is offline at {COMFY}. Start the local provider and retry.") from error
             info = info.json()
-            if workflow == "pixal3d":
+            if operation == "generate":
                 ctx.stage("Uploading reference to local ComfyUI")
                 with inputs["image"].open("rb") as source:
                     uploaded = client.post(COMFY + "/upload/image",
@@ -285,5 +286,5 @@ class Ollama:
         return Proposal.model_validate(data)
 
 
-PROVIDERS: dict[str, Provider] = {"comfy": Comfy(), "ollama": Ollama()}
+PROVIDERS: dict[str, Provider] = {"comfy": Comfy(), "local3d": Local3D(), "ollama": Ollama()}
 

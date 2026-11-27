@@ -21,6 +21,10 @@ jobs:
           node-version: '22'
       - name: Build the audited package
         run: |
+          $version = (Get-Content shared/release.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw 'The release tag must match shared/release.json.'
+          }
           python scripts/audit_release.py --history
           python scripts/audit_dependencies.py
           npm --prefix apps/desktop ci --no-audit --no-fund
@@ -31,3 +35,28 @@ jobs:
         with:
           name: Soceth3DStudio-Windows
           path: release-output/*
+  publish:
+    if: github.ref_type == 'tag'
+    needs: package
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Soceth3DStudio-Windows
+          path: release-output
+      - name: Verify and publish Windows ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          $stem = 'Soceth3DStudio-' + $env:GITHUB_REF_NAME.Substring(1) + '-Windows.zip'
+          $archive = Join-Path release-output $stem
+          $checksum = "$archive.sha256"
+          $expected = ((Get-Content -Raw -LiteralPath $checksum).Trim() -split '\s+')[0]
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash -ne $expected) {
+            throw 'The Windows ZIP checksum does not match.'
+          }
+          gh release create $env:GITHUB_REF_NAME --verify-tag --generate-notes $archive $checksum
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish the GitHub release.' }

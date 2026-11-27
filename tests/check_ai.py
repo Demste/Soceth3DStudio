@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument("qa", type=Path)
 parser.add_argument("stage", choices=("interpret", "generate", "text3d", "text3d-output", "graph"))
+parser.add_argument("--model", default="pixal3d", help="Installed image-to-3D variant for the generate check.")
 args = parser.parse_args()
 registry = Path(os.getenv("SOCETH_DATA", ROOT / "user_data")) / "studio.sqlite3"
 qa = args.qa.resolve()
@@ -115,14 +116,24 @@ def run(client):
     if args.stage == "graph":
         with local(10) as comfy:
             info = comfy.get(COMFY + "/object_info").raise_for_status().json()
-        for model in ("flux-klein", "pixal3d"):
+        for model in ("flux-klein", "pixal3d", "trellis2-int8", "trellis2-bf16"):
             item = CATALOG[model]
-            for profile in ("LOW_VRAM", "BALANCED", "QUALITY"):
+            for execution in item["configs"]:
+                profile = execution["profile"]
                 if model == "flux-klein":
                     graph, sink = flux_graph(info, item, "Test concept", 42, profile, "qa")
                 else:
                     graph, sink = pixal_graph(info, item, "soceth/qa.png", 42, profile, "qa", 1024)
                 missing = validate_graph(info, graph, require_artifacts=False)
+                if item["workflow"] == "trellis2":
+                    kinds = {node["class_type"] for node in graph.values()}
+                    assert {"Trellis2Conditioning", "UnwrapMesh", "BakeTextureFromVoxel",
+                            "BakeNormalMapFromMesh", "BakeAmbientOcclusion"} <= kinds
+                    assert not {"Pixal3DConditioning", "LoadMoGeModel"} & kinds
+                    expected = Path(item["files"][0]["path"]).name
+                    assert [node["inputs"]["unet_name"] for node in graph.values()
+                            if node["class_type"] == "UNETLoader"] == [expected]
+                    assert graph[sink]["class_type"] == "Save3DAdvanced"
                 print(model, profile, sink, len(graph), "missing files", missing)
         return {"native_node_schemas": "passed", "inference": "not run by this schema check"}
 
@@ -143,7 +154,8 @@ def run(client):
         return {"operations": operations, "width_before": initial, "width_after": final, "metrics": row["result"].get("metrics")}
 
     if args.stage == "generate":
-        assert is_ready(CATALOG["pixal3d"]), "Pinned Pixal3D weight set is missing."
+        model = CATALOG[args.model]
+        assert model["operation"] == "generate" and is_ready(model), "Select an installed image-to-3D weight set."
         file = qa / "reference.png"
         with file.open("rb") as image:
             reference = response(client.post(path + "/files", files={"file":(file.name, image)}))["id"]
@@ -154,14 +166,27 @@ def run(client):
         reference = concept["result"]["file"]
         assert client.get("/api/files/" + reference).content.startswith(b"\x89PNG")
         print("FLUX.2 concept verified", reference, concept["result"].get("metrics"), flush=True)
-    result = job("generate", 3600, file=reference, name="AI QA Chest", seed=172409)["result"]
-    assert result["report"]["triangles"] > 0 and result["report"]["textures_present"], result
+    explicit = {"model": args.model} if args.stage == "generate" else {}
+    result = job("generate", 3600, file=reference, name="AI QA Chest", seed=172409, **explicit)["result"]
+    assert result["report"]["triangles"] > 0, result
+    if args.stage != "generate" or model["provider"] != "local3d":
+        assert result["report"]["textures_present"], result
     asset = response(client.get("/api/assets/" + result["asset"]))
     revision = next(row for row in asset["revisions"] if row["id"] == result["revision"])
     preview = client.get("/api/files/" + revision["body"]["preview"])
     assert preview.is_success and preview.content.startswith(b"glTF")
     evidence = {"asset": asset["id"], "triangles": result["report"]["triangles"],
                 "textures": result["report"]["textures"], "metrics": result.get("metrics")}
+    if args.stage == "generate":
+        original = next(row for row in asset["revisions"] if row["parent"] is None)
+        provenance = original["body"]["provenance"]
+        assert provenance["model"]["id"] == args.model
+        evidence["model"] = provenance["model"]["id"]
+        if model["workflow"] == "trellis2":
+            source, _ = project_file(project, original["body"]["source"], {"source_mesh"})
+            glb = validate_glb(source)
+            assert any("TEXCOORD_0" in item.get("attributes", {}) for mesh in glb["meshes"] for item in mesh["primitives"])
+            assert any("baseColorTexture" in material.get("pbrMetallicRoughness", {}) for material in glb["materials"])
     if args.stage == "text3d":
         evidence.update(concept=reference, concept_metrics=concept["result"]["metrics"])
     return evidence

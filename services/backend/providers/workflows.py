@@ -82,6 +82,8 @@ def pixal_graph(info, model, image, seed, profile, prefix, texture_limit):
         if kind == "ComfySwitchNode":
             switch = connected.get("switch")
             flag = inputs[switch[0]]["widgets_values"][0] if switch else item["widgets_values"][0]
+            if switch and inputs[switch[0]].get("title") == "Boolean (Switch to Trellis2)":
+                flag = model["workflow"] == "trellis2"
             return resolve(*connected["on_true" if flag else "on_false"])
         if kind in {"PreviewImage", "MaskPreview", "GetMeshInfo"}:
             return resolve(*next(iter(connected.values())))

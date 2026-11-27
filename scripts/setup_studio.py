@@ -78,16 +78,17 @@ def apply(mode, identifiers):
                 continue
             console = Console()
             if mode == "existing":
-                if model["provider"] == "comfy":
+                if model["provider"] in {"comfy", "local3d"}:
                     discovery.register_existing(model, [], console)
                 continue
             if model["provider"] == "ollama" and not state["dependencies"]["ollama"]:
                 raise ValueError("Start or install local Ollama before pulling the planned Ollama model.")
             if model["provider"] == "comfy" and not all(state["dependencies"].get(dep) for dep in model["dependencies"]):
                 raise ValueError("The CUDA and native ComfyUI checks must pass before downloading this variant.")
-            if key in state["existing"]["matches"] and model["provider"] == "comfy":
+            if key in state["existing"]["matches"] and model["provider"] in {"comfy", "local3d"}:
                 discovery.register_existing(model, [], console)
             else:
+                discovery.check_candidate_install(model, state)
                 models.install(model, console)
         print("Model configuration saved. Existing manual choices remain active.")
     finally:

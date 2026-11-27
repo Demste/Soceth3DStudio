@@ -138,7 +138,469 @@
       "total_vram": 8192,
       "profile": "LOW_VRAM",
       "note": "Existing image-to-3D acceptance run, 60,000-triangle source with embedded PBR."
+    },
+    "commercial_game": {
+      "status": "conditional",
+      "terms": "Commercial game output is permitted under the reviewed local workflow, subject to the DINOv3 License. DINOv3 has no revenue cap or game-output territory clause. Its use is subject to trade controls and listed end-use restrictions. DINOv3 redistribution requires its license, and research publications require acknowledgement. Use references you own or have permission to use."
     }
+  },
+  {
+    "id": "trellis2-int8",
+    "name": "TRELLIS.2 INT8",
+    "provider": "comfy",
+    "operation": "generate",
+    "workflow": "trellis2",
+    "license": "MIT + DINOv3 License",
+    "vram": "16 GiB GPU planning tier; 10,000 MiB free for 512 or 14,000 MiB for a 1024 cascade. Full inference is unverified.",
+    "files": [
+      {
+        "source": "https://huggingface.co/Comfy-Org/TRELLIS.2/resolve/d79b9a7ad07d2e095f9883011b1cf6f6b9b7e6d7/diffusion_models/trellis_2_int8_convrot.safetensors",
+        "repo": "Comfy-Org/TRELLIS.2",
+        "revision": "d79b9a7ad07d2e095f9883011b1cf6f6b9b7e6d7",
+        "path": "diffusion_models/trellis_2_int8_convrot.safetensors",
+        "size": 5253048192,
+        "sha256": "d01952ad137213f6a868f86b6b877026276f84af5eec23069217475a0bad3a31",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/Comfy-Org/Pixal3D/resolve/f37641be376725d324c56626007cc477f1249a69/vae/trellis_2_shape_vae_bf16.safetensors",
+        "repo": "Comfy-Org/Pixal3D",
+        "revision": "f37641be376725d324c56626007cc477f1249a69",
+        "path": "vae/trellis_2_shape_vae_bf16.safetensors",
+        "size": 1095844024,
+        "sha256": "de0cb4949a76c59ee5c091a995a69bcc8c51d5aeda939f0c641a50d2a72341f4",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/Comfy-Org/Pixal3D/resolve/f37641be376725d324c56626007cc477f1249a69/vae/trellis_2_texture_vae_bf16.safetensors",
+        "repo": "Comfy-Org/Pixal3D",
+        "revision": "f37641be376725d324c56626007cc477f1249a69",
+        "path": "vae/trellis_2_texture_vae_bf16.safetensors",
+        "size": 948461364,
+        "sha256": "714e5ebf094a610e12a8e3b5175c18a62f37f6ea4218acb6073644456b73ab0e",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/Comfy-Org/Pixal3D/resolve/f37641be376725d324c56626007cc477f1249a69/clip_vision/dino_v3_L_naf_fp32.safetensors",
+        "repo": "Comfy-Org/Pixal3D",
+        "revision": "f37641be376725d324c56626007cc477f1249a69",
+        "path": "clip_vision/dino_v3_L_naf_fp32.safetensors",
+        "size": 1215214176,
+        "sha256": "4ad2ec4e0879a5b5b04cd97325cc37da954a7b6edca5170b86510f17f2b2290f",
+        "license": "DINOv3 License"
+      },
+      {
+        "source": "https://huggingface.co/Comfy-Org/BiRefNet/resolve/884af709e9b795d89dafbf97f29c8d6a2386f5c6/background_removal/birefnet.safetensors",
+        "repo": "Comfy-Org/BiRefNet",
+        "revision": "884af709e9b795d89dafbf97f29c8d6a2386f5c6",
+        "path": "background_removal/birefnet.safetensors",
+        "size": 444473596,
+        "sha256": "9ab37426bf4de0567af6b5d21b16151357149139362e6e8992021b8ce356a154",
+        "license": "MIT"
+      }
+    ],
+    "family": "TRELLIS.2",
+    "version": "4B native",
+    "variant": "INT8 ConvRot single-image",
+    "precision": "INT8 + BF16 VAEs",
+    "capability": "IMAGE_TO_3D",
+    "dependencies": [
+      "comfy",
+      "cuda",
+      "trellis2_nodes"
+    ],
+    "min_ram": 16384,
+    "min_compute": "7.5",
+    "configs": [
+      {
+        "profile": "LOW_VRAM",
+        "total_vram": 16384,
+        "free_vram": 10000,
+        "features": [
+          "512 shape",
+          "up to 512 texture",
+          "PBR"
+        ],
+        "evidence": "experimental",
+        "note": "Conservative Studio planning gate for the native 512 path, not a measured peak."
+      },
+      {
+        "profile": "BALANCED",
+        "total_vram": 16384,
+        "free_vram": 14000,
+        "features": [
+          "1024 cascade",
+          "up to 1024 texture",
+          "PBR"
+        ],
+        "evidence": "experimental",
+        "note": "Conservative Studio planning gate for the native cascade, not a measured peak."
+      }
+    ],
+    "verification": "experimental",
+    "commercial": "conditional",
+    "commercial_game": {
+      "status": "conditional",
+      "terms": "Commercial game output is permitted under the reviewed local workflow, subject to the DINOv3 License. DINOv3 has no revenue cap or game-output territory clause. Its use is subject to trade controls and listed end-use restrictions. DINOv3 redistribution requires its license, and research publications require acknowledgement. Use references you own or have permission to use."
+    },
+    "manual_only": true,
+    "source": "https://huggingface.co/Comfy-Org/TRELLIS.2/tree/d79b9a7ad07d2e095f9883011b1cf6f6b9b7e6d7",
+    "traits": [
+      "Single-image mesh, UV unwrap and baked base color, metallic, roughness, normal and ambient occlusion in GLB."
+    ],
+    "cpu_offload": true,
+    "input_formats": [
+      "PNG"
+    ],
+    "output_formats": [
+      "GLB"
+    ],
+    "workflow_ids": [
+      "trellis2"
+    ],
+    "attribution": "Microsoft TRELLIS.2, Comfy-Org INT8 conversion, Meta DINOv3 and BiRefNet.",
+    "disk_bytes": 8957041352
+  },
+  {
+    "id": "trellis2-bf16",
+    "name": "TRELLIS.2 BF16",
+    "provider": "comfy",
+    "operation": "generate",
+    "workflow": "trellis2",
+    "license": "MIT + DINOv3 License",
+    "vram": "Experimental on 16 GiB at 512 shape with 14,500 MiB free. The 1024 profile plans for 24 GiB. Peak memory and visual improvement are unverified.",
+    "files": [
+      {
+        "source": "https://huggingface.co/Comfy-Org/TRELLIS.2/resolve/430a9d09b2416687018c8fe8edced2ad4858a439/diffusion_models/trellis_2_bf16.safetensors",
+        "repo": "Comfy-Org/TRELLIS.2",
+        "revision": "430a9d09b2416687018c8fe8edced2ad4858a439",
+        "path": "diffusion_models/trellis_2_bf16.safetensors",
+        "size": 10338297616,
+        "sha256": "bf8ebe29f2d73722ca8a17b7aa65ef07650eb26d04799ae600482058f96921b5",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/Comfy-Org/Pixal3D/resolve/f37641be376725d324c56626007cc477f1249a69/vae/trellis_2_shape_vae_bf16.safetensors",
+        "repo": "Comfy-Org/Pixal3D",
+        "revision": "f37641be376725d324c56626007cc477f1249a69",
+        "path": "vae/trellis_2_shape_vae_bf16.safetensors",
+        "size": 1095844024,
+        "sha256": "de0cb4949a76c59ee5c091a995a69bcc8c51d5aeda939f0c641a50d2a72341f4",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/Comfy-Org/Pixal3D/resolve/f37641be376725d324c56626007cc477f1249a69/vae/trellis_2_texture_vae_bf16.safetensors",
+        "repo": "Comfy-Org/Pixal3D",
+        "revision": "f37641be376725d324c56626007cc477f1249a69",
+        "path": "vae/trellis_2_texture_vae_bf16.safetensors",
+        "size": 948461364,
+        "sha256": "714e5ebf094a610e12a8e3b5175c18a62f37f6ea4218acb6073644456b73ab0e",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/Comfy-Org/Pixal3D/resolve/f37641be376725d324c56626007cc477f1249a69/clip_vision/dino_v3_L_naf_fp32.safetensors",
+        "repo": "Comfy-Org/Pixal3D",
+        "revision": "f37641be376725d324c56626007cc477f1249a69",
+        "path": "clip_vision/dino_v3_L_naf_fp32.safetensors",
+        "size": 1215214176,
+        "sha256": "4ad2ec4e0879a5b5b04cd97325cc37da954a7b6edca5170b86510f17f2b2290f",
+        "license": "DINOv3 License"
+      },
+      {
+        "source": "https://huggingface.co/Comfy-Org/BiRefNet/resolve/884af709e9b795d89dafbf97f29c8d6a2386f5c6/background_removal/birefnet.safetensors",
+        "repo": "Comfy-Org/BiRefNet",
+        "revision": "884af709e9b795d89dafbf97f29c8d6a2386f5c6",
+        "path": "background_removal/birefnet.safetensors",
+        "size": 444473596,
+        "sha256": "9ab37426bf4de0567af6b5d21b16151357149139362e6e8992021b8ce356a154",
+        "license": "MIT"
+      }
+    ],
+    "family": "TRELLIS.2",
+    "version": "4B native",
+    "variant": "BF16 single-image",
+    "precision": "BF16",
+    "capability": "IMAGE_TO_3D",
+    "dependencies": [
+      "comfy",
+      "cuda",
+      "trellis2_nodes"
+    ],
+    "min_ram": 16384,
+    "min_compute": "7.5",
+    "configs": [
+      {
+        "profile": "LOW_VRAM",
+        "total_vram": 16384,
+        "free_vram": 14500,
+        "features": [
+          "512 shape",
+          "up to 512 texture",
+          "PBR"
+        ],
+        "evidence": "experimental",
+        "note": "Native BF16 test profile. A 16 GiB card may still run out of memory."
+      },
+      {
+        "profile": "BALANCED",
+        "total_vram": 24576,
+        "free_vram": 20000,
+        "features": [
+          "1024 cascade",
+          "up to 1024 texture",
+          "PBR"
+        ],
+        "evidence": "experimental",
+        "note": "Higher-memory BF16 test profile."
+      }
+    ],
+    "verification": "experimental",
+    "commercial": "conditional",
+    "commercial_game": {
+      "status": "conditional",
+      "terms": "Commercial game output is permitted under the reviewed local workflow, subject to the DINOv3 License. DINOv3 has no revenue cap or game-output territory clause. Its use is subject to trade controls and listed end-use restrictions. DINOv3 redistribution requires its license, and research publications require acknowledgement. Use references you own or have permission to use."
+    },
+    "manual_only": true,
+    "source": "https://huggingface.co/Comfy-Org/TRELLIS.2/tree/430a9d09b2416687018c8fe8edced2ad4858a439",
+    "traits": [
+      "Single-image mesh, UV unwrap and baked base color, metallic, roughness, normal and ambient occlusion in GLB."
+    ],
+    "cpu_offload": true,
+    "input_formats": [
+      "PNG"
+    ],
+    "output_formats": [
+      "GLB"
+    ],
+    "workflow_ids": [
+      "trellis2"
+    ],
+    "attribution": "Microsoft TRELLIS.2, Comfy-Org INT8 conversion, Meta DINOv3 and BiRefNet.",
+    "disk_bytes": 14042290776
+  },
+  {
+    "id": "triposr",
+    "name": "TripoSR",
+    "provider": "local3d",
+    "operation": "generate",
+    "workflow": "triposr",
+    "license": "MIT",
+    "vram": "About 6 GB at reference settings. Available VRAM and Windows runtime must pass preflight.",
+    "files": [
+      {
+        "source": "https://huggingface.co/stabilityai/TripoSR/resolve/5b521936b01fbe1890f6f9baed0254ab6351c04a/model.ckpt",
+        "repo": "stabilityai/TripoSR",
+        "revision": "5b521936b01fbe1890f6f9baed0254ab6351c04a",
+        "path": "triposr/model.ckpt",
+        "size": 1677246742,
+        "sha256": "429e2c6b22a0923967459de24d67f05962b235f79cde6b032aa7ed2ffcd970ee",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/stabilityai/TripoSR/resolve/5b521936b01fbe1890f6f9baed0254ab6351c04a/config.yaml",
+        "repo": "stabilityai/TripoSR",
+        "revision": "5b521936b01fbe1890f6f9baed0254ab6351c04a",
+        "path": "triposr/config.yaml",
+        "size": 987,
+        "sha256": "74ca708ce086bf68e97709ea6b3d91f14717921c04691e84043f0eb8fcc68e62",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/facebook/dino-vitb16/resolve/f205d5d8e640a89a2b8ef0369670dfc37cc07fc2/config.json",
+        "repo": "facebook/dino-vitb16",
+        "revision": "f205d5d8e640a89a2b8ef0369670dfc37cc07fc2",
+        "path": "triposr/dino-config.json",
+        "size": 454,
+        "sha256": "b87c0270b97db085fd82cf114a761fd0f62ae7914fbd407c752a2260646b689c",
+        "license": "Apache-2.0 (architecture configuration only)"
+      }
+    ],
+    "family": "TripoSR",
+    "version": "Official weights",
+    "variant": "Single-image vertex color",
+    "precision": "FP32",
+    "capability": "IMAGE_TO_3D",
+    "dependencies": [
+      "cuda",
+      "local3d_python"
+    ],
+    "min_ram": 12288,
+    "min_compute": "7.5",
+    "configs": [
+      {
+        "profile": "LOW_VRAM",
+        "total_vram": 6144,
+        "free_vram": 5500,
+        "features": [
+          "256 extraction",
+          "vertex color"
+        ],
+        "evidence": "measured",
+        "note": "Studio ran the 256 extraction profile on an RTX 3070 8 GiB with Windows and PyTorch 2.10.0+cu126. Other GPUs remain unverified."
+      }
+    ],
+    "verification": "measured",
+    "commercial": "permissive",
+    "commercial_game": {
+      "status": "reviewed",
+      "terms": "The selected code and weight licenses permit commercial game assets. This adapter uses user-supplied alpha and no automatic matting weights. Use references you own or are permitted to use. Preserve notices when redistributing code or weights."
+    },
+    "manual_only": true,
+    "source": "https://github.com/VAST-AI-Research/TripoSR",
+    "traits": [
+      "Requires an already segmented transparent PNG. Includes vertex colors in GLB. UV textures and generated PBR maps are unavailable.",
+      "A Unity material that reads mesh vertex colors is needed to display the tint in-game."
+    ],
+    "cpu_offload": false,
+    "input_formats": [
+      "PNG (transparent background)"
+    ],
+    "output_formats": [
+      "GLB"
+    ],
+    "workflow_ids": [
+      "triposr"
+    ],
+    "attribution": "VAST AI TripoSR and upstream component notices.",
+    "disk_bytes": 1677248183,
+    "measurement": {
+      "seconds": 34.61,
+      "peak_system_vram": 5041,
+      "compute": "8.6",
+      "total_vram": 8192,
+      "profile": "LOW_VRAM",
+      "note": "Single transparent toolbox fixture. Timing includes loading, Blender import and candidate optimization. Source GLB retained vertex color."
+    }
+  },
+  {
+    "id": "triposg",
+    "name": "TripoSG",
+    "provider": "local3d",
+    "operation": "generate",
+    "workflow": "triposg",
+    "license": "MIT + Apache-2.0 DINOv2",
+    "vram": "16 GiB Studio planning tier. Sequential CPU offload and hierarchical extraction. No measured peak yet.",
+    "files": [
+      {
+        "source": "https://huggingface.co/VAST-AI/TripoSG/resolve/2c1c516d22d58db486a058d98d31bb6177344e06/image_encoder_dinov2/model.safetensors",
+        "repo": "VAST-AI/TripoSG",
+        "revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+        "path": "triposg/image_encoder_dinov2/model.safetensors",
+        "size": 1217522888,
+        "sha256": "399fba97a95f22c36834418bc69373364a99af3a1153da1c0fb31db567c92e23",
+        "license": "Apache-2.0"
+      },
+      {
+        "source": "https://huggingface.co/VAST-AI/TripoSG/resolve/2c1c516d22d58db486a058d98d31bb6177344e06/transformer/diffusion_pytorch_model.safetensors",
+        "repo": "VAST-AI/TripoSG",
+        "revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+        "path": "triposg/transformer/diffusion_pytorch_model.safetensors",
+        "size": 5758280104,
+        "sha256": "9192b5923f7b605b394192809aa2ceb73bf0f4009674d8e3b999b45bb97d4bf2",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/VAST-AI/TripoSG/resolve/2c1c516d22d58db486a058d98d31bb6177344e06/vae/diffusion_pytorch_model.safetensors",
+        "repo": "VAST-AI/TripoSG",
+        "revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+        "path": "triposg/vae/diffusion_pytorch_model.safetensors",
+        "size": 970685468,
+        "sha256": "a2e667c24927a5a35e5f19fcb4c75890e9399aa966b6db8131d7df733a750c8b",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/VAST-AI/TripoSG/resolve/2c1c516d22d58db486a058d98d31bb6177344e06/feature_extractor_dinov2/preprocessor_config.json",
+        "repo": "VAST-AI/TripoSG",
+        "revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+        "path": "triposg/feature_extractor_dinov2/preprocessor_config.json",
+        "size": 436,
+        "sha256": "14e780d86fa1861f8751f868d7f45425b5feb55c38ca26f152ca5097ab30f828",
+        "license": "Apache-2.0"
+      },
+      {
+        "source": "https://huggingface.co/VAST-AI/TripoSG/resolve/2c1c516d22d58db486a058d98d31bb6177344e06/image_encoder_dinov2/config.json",
+        "repo": "VAST-AI/TripoSG",
+        "revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+        "path": "triposg/image_encoder_dinov2/config.json",
+        "size": 1104,
+        "sha256": "8ed81b0d5ffd2c8b2cecd7dc1326d3eefa409bc9d525537b6b2a3c70a992fd02",
+        "license": "Apache-2.0"
+      },
+      {
+        "source": "https://huggingface.co/VAST-AI/TripoSG/resolve/2c1c516d22d58db486a058d98d31bb6177344e06/scheduler/scheduler_config.json",
+        "repo": "VAST-AI/TripoSG",
+        "revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+        "path": "triposg/scheduler/scheduler_config.json",
+        "size": 158,
+        "sha256": "ea7c9b4d502dcaba97cd85291cfd7dbd3c6c82cbc4c775af5c6d9224864279c9",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/VAST-AI/TripoSG/resolve/2c1c516d22d58db486a058d98d31bb6177344e06/transformer/config.json",
+        "repo": "VAST-AI/TripoSG",
+        "revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+        "path": "triposg/transformer/config.json",
+        "size": 191,
+        "sha256": "54ad779e68f9bc7303122cdf291f6db48dec7c67e41d28c05ac359daf914128a",
+        "license": "MIT"
+      },
+      {
+        "source": "https://huggingface.co/VAST-AI/TripoSG/resolve/2c1c516d22d58db486a058d98d31bb6177344e06/vae/config.json",
+        "repo": "VAST-AI/TripoSG",
+        "revision": "2c1c516d22d58db486a058d98d31bb6177344e06",
+        "path": "triposg/vae/config.json",
+        "size": 335,
+        "sha256": "2fb6ba9b364d42c9681879dca0f7edcb978f2db974a1ca4b15d28f9b15a5baed",
+        "license": "MIT"
+      }
+    ],
+    "family": "TripoSG",
+    "version": "Official weights",
+    "variant": "Single-image geometry",
+    "precision": "FP16 runtime from official weights",
+    "capability": "IMAGE_TO_3D",
+    "dependencies": [
+      "cuda",
+      "local3d_python"
+    ],
+    "min_ram": 16384,
+    "min_compute": "7.5",
+    "configs": [
+      {
+        "profile": "LOW_VRAM",
+        "total_vram": 16384,
+        "free_vram": 9000,
+        "features": [
+          "sequential FP16",
+          "geometry only"
+        ],
+        "evidence": "experimental",
+        "note": "Estimated 16 GiB Windows preset with CPU offload. Complete inference is unverified."
+      }
+    ],
+    "verification": "experimental",
+    "commercial": "permissive",
+    "commercial_game": {
+      "status": "reviewed",
+      "terms": "The selected code and weight licenses permit commercial game assets. This adapter uses user-supplied alpha and no automatic matting weights. Use references you own or are permitted to use. Preserve notices when redistributing code or weights."
+    },
+    "manual_only": true,
+    "source": "https://github.com/VAST-AI-Research/TripoSG",
+    "traits": [
+      "Requires an already segmented transparent PNG. GLB contains geometry. UV textures and generated PBR maps are unavailable."
+    ],
+    "cpu_offload": true,
+    "input_formats": [
+      "PNG (transparent background)"
+    ],
+    "output_formats": [
+      "GLB"
+    ],
+    "workflow_ids": [
+      "triposg"
+    ],
+    "attribution": "VAST AI TripoSG and upstream component notices.",
+    "disk_bytes": 7946490684
   },
   {
     "id": "flux-klein",
@@ -572,7 +1034,11 @@
       "pixal3d"
     ],
     "attribution": "DINOv3 terms and citations apply to the vision encoder.",
-    "disk_bytes": 15365170788
+    "disk_bytes": 15365170788,
+    "commercial_game": {
+      "status": "conditional",
+      "terms": "Commercial game output is permitted under the reviewed local workflow, subject to the DINOv3 License. DINOv3 has no revenue cap or game-output territory clause. Its use is subject to trade controls and listed end-use restrictions. DINOv3 redistribution requires its license, and research publications require acknowledgement. Use references you own or have permission to use."
+    }
   },
   {
     "id": "flux-klein-bf16",

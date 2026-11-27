@@ -152,7 +152,8 @@ $catalog = @($state.catalog)
 $chosen = @($catalog | Where-Object { $_.id -in $Model })
 if ($Model -and @($Model | Where-Object { $_ -notin $chosen.id })) { throw 'The selection includes an unknown model ID.' }
 
-if ($WithComfy -or $ComfyOnly -or (($Models -in 'Recommended','Custom') -and ($chosen.provider -contains 'comfy'))) {
+if ($WithComfy -or $ComfyOnly -or (($Models -in 'Recommended','Custom') -and
+        ($chosen.provider -contains 'comfy' -or $chosen.provider -contains 'local3d'))) {
     if ($state.hardware.runtime.status -eq 'verified' -and $ComfyRuntime -eq 'Auto') {
         Write-Host 'Reusing the PyTorch runtime that passed the CUDA kernel check.'
     } elseif (-not $state.dependencies.comfy -or $ComfyRuntime -ne 'Auto') {

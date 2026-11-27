@@ -18,7 +18,7 @@ from .jobs import enqueue
 from .locations import CONFIG, preferences
 from .providers.discovery import configuration, discover, download_plan
 from .providers.inference import random_seed
-from .providers.models import CATALOG, COMFY, OLLAMA, local, model_for, registry, status
+from .providers.models import CATALOG, COMFY, OLLAMA, local, model_for, registry, removal_plan, status
 from .providers.recommendations import DEFAULT_POLICY, PRIMARY
 from .routes import active_bible, asset_row, found, project_row
 from .schemas import Bible, ID, JobRequest, Strict, Text
@@ -252,8 +252,14 @@ def install_model(model: str):
 
 @router.delete("/models/{model}", status_code=202)
 def remove_model(model: str):
-    found(CATALOG.get(model), "Model not found.")
+    item = found(CATALOG.get(model), "Model not found.")
+    removal_plan(item)
     return enqueue(None, "remove", {"model": model})
+
+
+@router.get("/models/{model}/removal-plan")
+def model_removal_plan(model: str):
+    return removal_plan(found(CATALOG.get(model), "Model not found."))
 
 
 def seed(body):
