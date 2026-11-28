@@ -1,0 +1,5 @@
+# Windows texture atlas wheels for the Studio Python interpreter.
+glcontext==3.0.0
+moderngl==5.13.0
+numpy==2.4.6
+xatlas==0.0.11

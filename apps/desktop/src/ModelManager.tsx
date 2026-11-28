@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, FolderOpen, Search, Trash2 } from 'lucide-react';
-import { DownloadPlan, Job, Model, ModelConfiguration, ProviderSettings, RemovalPlan, System, api, gib, json, media, stageActive } from './api';
+import { DownloadPlan, Job, Model, ModelConfiguration, ProviderSettings, RemovalPlan, System, api, gib, isTextured, json, media, outputCapabilities, stageActive } from './api';
 import { Hardware, JobList } from './StudioPanels';
 
 const capabilities: Record<string, string> = {
@@ -34,7 +34,8 @@ export function ModelManager({configuration, system, jobs, project, refresh, que
   const busy = jobs.some(job => !job.project && stageActive(job));
   const recommended = Object.values(configuration.recommendations).flatMap(row => row.model ? [row.model] : []);
   const candidates = new Set(Object.values(configuration.recommendations).flatMap(row => row.candidates));
-  const rows = configuration.catalog.filter(model => (capability === 'text_to_3d' ?
+  const visibleModels = configuration.catalog.filter(model => model.operation !== 'generate' || system?.advanced || isTextured(model));
+  const rows = visibleModels.filter(model => (capability === 'text_to_3d' ?
     ['generate','concept'].includes(model.operation) : !capability || capability === model.operation) &&
     [model.name, model.family, model.variant].join(' ').toLowerCase().includes(text.toLowerCase()) &&
     (filter === 'installed' ? model.installed : filter === 'compatible' ? model.compatibility?.status === 'compatible' :
@@ -71,12 +72,12 @@ export function ModelManager({configuration, system, jobs, project, refresh, que
       {['generate','concept','interpret'].map(kind => {
         const choice = configuration.recommendations[kind];
         const row = configuration.catalog.find(model => model.id === choice?.model);
-        const chosen = configuration.catalog.find(model => model.operation === kind && model.selected);
+        const chosen = configuration.catalog.find(model => model.operation === kind && model.workflow_default);
         return <div className="material stack tight" key={kind}><strong>{capabilities[kind]} · {row?.name || 'No matching configuration'}</strong>
           {row && <p className="small">{row.compatibility?.execution?.features.join(' · ')} · {row.compatibility?.confidence}
             {row.compatibility?.status === 'setup_required' && ' · Provider setup needed'}</p>}
           {chosen?.id !== row?.id && chosen && <p className="small">Active {chosen.selection_scope} choice · {chosen.name}</p>}
-          {choice?.candidates.length > 0 && <p className="small muted">Candidates for comparison · {choice.candidates.map(id => configuration.catalog.find(item => item.id === id)?.name).join(', ')}</p>}
+          {choice?.candidates.some(id => visibleModels.some(item => item.id === id)) && <p className="small muted">Experimental candidates · {choice.candidates.flatMap(id => visibleModels.find(item => item.id === id)?.name ?? []).join(', ')}</p>}
         </div>;
       })}
       <div className="row wrap"><button className="primary" disabled={busy || !configuration.plan.models.length}
@@ -111,6 +112,7 @@ export function ModelManager({configuration, system, jobs, project, refresh, que
           const ready = compatible && !runtimeSetup;
           const imageTo3D = model.operation === 'generate';
           const selectable = ['generate','concept','interpret'].includes(model.operation);
+          const canSetDefault = !imageTo3D || isTextured(model);
           const selected = model.selected && model.selection_scope === scope;
           const status = imageTo3D ? model.installed ? 'Installed' : 'Not installed' :
             model.compatibility?.status === 'incompatible' ? 'Incompatible' : model.installed ? 'Installed' : 'Available';
@@ -119,7 +121,8 @@ export function ModelManager({configuration, system, jobs, project, refresh, que
             <p className="small">{capabilities[model.operation]} · {model.source_type} · {model.compatibility?.execution?.profile || 'No profile'}</p>
             <p className="small">{model.license} · {gib(model.size)} · {model.vram}</p>
             {imageTo3D && <>
-              <p className="small">{compatible ? (runtimeSetup ? 'Prepare local runtime' : model.installed ? 'Ready to run' : 'Compatible for installation') :
+              {model.output_capability && <p className="small">{outputCapabilities[model.output_capability]}{model.source_texture_max ? ' · up to ' + model.source_texture_max + ' px in this profile' : ''}</p>}
+              <p className="small">{compatible ? (runtimeSetup ? 'Prepare local runtime' : model.installed ? 'Profile requirements met' : 'Compatible for installation') :
                 model.compatibility?.status === 'setup_required' ? 'Provider setup required' : 'Unavailable on current configuration'}
                 {' · '}{model.provider === 'comfy' ? 'Native ComfyUI' : model.provider === 'local3d' ? 'Isolated local PyTorch' : model.provider}
                 {' · '}{model.compatibility?.measurement ? 'Measured on matching GPU configuration' :
@@ -130,7 +133,8 @@ export function ModelManager({configuration, system, jobs, project, refresh, que
             {recommended.includes(model.id) && <span className="pill green">Recommended</span>}
             {candidates.has(model.id) && <span className="pill">Comparison candidate</span>}
             <div className="row wrap">
-              {selectable && model.installed && <button disabled={!ready || selected} onClick={() => setModel(model.id, model.operation)}>{selected ? 'Selected' : 'Select'}</button>}
+              {selectable && canSetDefault && model.installed && <button disabled={!ready || selected} onClick={() => setModel(model.id, model.operation)}>{selected ? 'Selected' : 'Select'}</button>}
+              {imageTo3D && !canSetDefault && <span className="small">Select per job in Advanced Mode.</span>}
               {runtimeSetup && compatible && <button disabled={busy} onClick={() =>
                 queue('/models/' + model.id + '/install', json('POST'))}>Prepare runtime</button>}
               {selectable && !model.installed && model.source_type === 'Managed' && <button disabled={busy || model.compatibility?.status === 'incompatible'}
@@ -165,7 +169,14 @@ export function ModelManager({configuration, system, jobs, project, refresh, que
       </section>)}
       {!rows.length && <p>No models match these filters.</p>}
     </section>
-    <LocalModels configuration={configuration} queue={queue} busy={busy} error={error}/>
+    <LocalModels configuration={configuration} models={visibleModels} queue={queue} busy={busy} error={error}/>
+    <details className="panel"><summary>Stable Fast 3D and SPAR3D setup status</summary><div className="stack tight detail-body">
+      <p>Windows installation is blocked pending validation of the native texture baker and UV unwrapper. The CUDA path requires Visual Studio 2022 C++ Build Tools, the Windows SDK, and a CUDA Toolkit matched to PyTorch. SPAR3D also requires AlphaCLIP assets.</p>
+      <p>Commercial use requires Stability AI registration or an Enterprise license. Accept each model’s access terms on Hugging Face and authenticate its isolated local environment with a model-scoped read token.</p>
+      <div className="row wrap"><a href="https://huggingface.co/stabilityai/stable-fast-3d">Stable Fast 3D access</a>
+        <a href="https://huggingface.co/stabilityai/stable-point-aware-3d">SPAR3D access</a>
+        <a href="https://stability.ai/community-license-agreement">Stability AI license</a></div>
+    </div></details>
     {jobs.some(job => !job.project) && <section className="panel stack tight"><h2>Model jobs</h2>
       <JobList jobs={jobs.filter(job => !job.project).slice(0, 6)} cancel={cancel} retry={retry}/></section>}
     {system?.advanced && <><ProviderOptions values={configuration.providers} error={error}/>
@@ -193,8 +204,8 @@ function Diagnostics({error}: {error: (value: unknown) => void}) {
   </div></details>;
 }
 
-function LocalModels({configuration, queue, busy, error}: {
-  configuration: ModelConfiguration; queue: (url: string, request: RequestInit) => void; busy: boolean; error: (value: unknown) => void;
+function LocalModels({configuration, models, queue, busy, error}: {
+  configuration: ModelConfiguration; models: Model[]; queue: (url: string, request: RequestInit) => void; busy: boolean; error: (value: unknown) => void;
 }) {
   const [model, setModel] = useState('');
   const [path, setPath] = useState('');
@@ -204,12 +215,12 @@ function LocalModels({configuration, queue, busy, error}: {
   return <details className="panel"><summary>Use Existing Local Model / Register Custom Model</summary>
     <div className="stack detail-body">
       <label>Local generation variant<select value={model} onChange={e => setModel(e.target.value)}><option value="">Select a variant</option>
-        {configuration.catalog.filter(row => ['comfy','local3d'].includes(row.provider) && ['generate','concept'].includes(row.operation)).map(row =>
+        {models.filter(row => ['comfy','local3d'].includes(row.provider) && ['generate','concept'].includes(row.operation)).map(row =>
           <option key={row.id} value={row.id}>{row.name}{configuration.existing.matches.includes(row.id) ? ' · files detected' : ''}</option>)}</select></label>
       <div className="row"><label>Model or Hugging Face snapshot directories<textarea value={path} onChange={e => setPath(e.target.value)} placeholder="Optional paths, one per line"/></label>
         <button onClick={() => pickPath('directory', value => setPath(current => [current, value].filter(Boolean).join('\n')), error)}
           aria-label="Choose model directory"><FolderOpen size={15}/></button></div>
-      <button disabled={!model || busy} onClick={() => queue('/models/register', json('POST', {model, roots: path.split('\n').map(value => value.trim()).filter(Boolean)}))}>
+      <button disabled={!models.some(row => row.id === model) || busy} onClick={() => queue('/models/register', json('POST', {model, roots: path.split('\n').map(value => value.trim()).filter(Boolean)}))}>
         Verify and reference local files</button>
       <p className="small">Restart a Studio-managed provider to reload registered paths. For an independently managed ComfyUI, configure those paths in its model search settings.</p>
       <label>Ollama tag<input list="existing-ollama" value={tag} onChange={e => setTag(e.target.value)}/></label>

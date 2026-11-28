@@ -9,7 +9,7 @@ from mathutils import Matrix
 from . import materials, operations, optimization, palette, scene
 
 
-def report(objects, budget, texture_limit):
+def report(objects, budget, texture_limit, vertex_budget=None):
     low, high = scene.bounds(objects)
     rows, issues, mats, textures = [], [], {}, {}
     def add(level, code, message):
@@ -44,8 +44,11 @@ def report(objects, budget, texture_limit):
             geom.free()
             evaluated.to_mesh_clear()
     count = sum(row["triangles"] for row in rows)
+    vertices = sum(row["vertices"] for row in rows)
     if budget and count > budget:
         add("error", "triangle_budget", f"{count} triangles exceed the {budget} triangle budget.")
+    if vertex_budget is not None and vertices > vertex_budget:
+        add("error", "vertex_budget", f"{vertices} vertices exceed the {vertex_budget} Blender vertex budget.")
     missing = []
     for texture in textures.values():
         if texture["missing"]:
@@ -58,7 +61,7 @@ def report(objects, budget, texture_limit):
         add("warning", "scale", f"Maximum dimension {size:.4g} m is outside 0.01–100 m.")
     if not textures:
         add("info", "no_textures", "No image textures are in use.")
-    return dict(objects=rows, object_count=len(rows), triangles=count, vertices=sum(row["vertices"] for row in rows),
+    return dict(objects=rows, object_count=len(rows), triangles=count, vertices=vertices, vertex_budget=vertex_budget,
                 bounds=[list(low), list(high)], materials=list(mats.values()), material_count=len(mats),
                 uv_present=all(row["uv"] for row in rows), textures=list(textures.values()), textures_present=bool(textures),
                 missing_paths=missing, within_budget=not any(item["code"].endswith("_budget") for item in issues),
@@ -246,13 +249,14 @@ def process_scene(command, out, kind):
             compliance = {**after, "adaptation": compliance["adaptation"],
                           "issues": list({(issue["code"], issue["message"]): issue
                                           for issue in compliance["issues"] + after["issues"]}.values())}
-    validation = report(objects, command.get("triangles"), command["texture_size"])
+    validation = report(objects, command.get("triangles"), command["texture_size"], command.get("vertex_budget"))
     if compliance:
         compliance["bible_version"] = command["bible_version"]
         compliance["geometry_style"] = art_bible["geometry"]
         compliance["geometry_budget"] = command.get("triangles")
-        compliance["geometry_conformity"] = ("review" if command.get("triangles") is None else
-                                              "pass" if validation["triangles"] <= command["triangles"] else "fail")
+        compliance["geometry_conformity"] = ("fail" if any(issue["code"] in {"triangle_budget", "vertex_budget"}
+                                                            for issue in validation["issues"]) else
+                                              "review" if command.get("triangles") is None else "pass")
         compliance["texture_conformity"] = (
             "fail" if any(issue["code"] in {"texture_budget", "missing_texture"} for issue in validation["issues"]) else
             "review" if any(issue["code"] in {"texture_style", "albedo_review", "albedo_unmeasured", "shader_review"}

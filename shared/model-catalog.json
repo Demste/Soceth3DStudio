@@ -142,7 +142,8 @@
     "commercial_game": {
       "status": "conditional",
       "terms": "Commercial game output is permitted under the reviewed local workflow, subject to the DINOv3 License. DINOv3 has no revenue cap or game-output territory clause. Its use is subject to trade controls and listed end-use restrictions. DINOv3 redistribution requires its license, and research publications require acknowledgement. Use references you own or have permission to use."
-    }
+    },
+    "output_capability": "pbr"
   },
   {
     "id": "trellis2-int8",
@@ -259,7 +260,8 @@
       "trellis2"
     ],
     "attribution": "Microsoft TRELLIS.2, Comfy-Org INT8 conversion, Meta DINOv3 and BiRefNet.",
-    "disk_bytes": 8957041352
+    "disk_bytes": 8957041352,
+    "output_capability": "pbr"
   },
   {
     "id": "trellis2-bf16",
@@ -376,7 +378,8 @@
       "trellis2"
     ],
     "attribution": "Microsoft TRELLIS.2, Comfy-Org INT8 conversion, Meta DINOv3 and BiRefNet.",
-    "disk_bytes": 14042290776
+    "disk_bytes": 14042290776,
+    "output_capability": "pbr"
   },
   {
     "id": "triposr",
@@ -417,7 +420,7 @@
     ],
     "family": "TripoSR",
     "version": "Official weights",
-    "variant": "Single-image vertex color",
+    "variant": "Single-image baked albedo",
     "precision": "FP32",
     "capability": "IMAGE_TO_3D",
     "dependencies": [
@@ -432,11 +435,11 @@
         "total_vram": 6144,
         "free_vram": 5500,
         "features": [
-          "256 extraction",
-          "vertex color"
+          "256 geometry grid",
+          "selectable albedo atlas up to 2048 px"
         ],
         "evidence": "measured",
-        "note": "Studio ran the 256 extraction profile on an RTX 3070 8 GiB with Windows and PyTorch 2.10.0+cu126. Other GPUs remain unverified."
+        "note": "Uses the native TripoSR bake path with isolated Windows xatlas and ModernGL wheels."
       }
     ],
     "verification": "measured",
@@ -448,8 +451,8 @@
     "manual_only": true,
     "source": "https://github.com/VAST-AI-Research/TripoSR",
     "traits": [
-      "Requires an already segmented transparent PNG. Includes vertex colors in GLB. UV textures and generated PBR maps are unavailable.",
-      "A Unity material that reads mesh vertex colors is needed to display the tint in-game."
+      "Requires a transparent PNG and an OpenGL 3.3-capable Windows driver. Generates a UV-mapped albedo atlas.",
+      "No generated metallic, roughness, normal or occlusion maps."
     ],
     "cpu_offload": false,
     "input_formats": [
@@ -463,13 +466,14 @@
     ],
     "attribution": "VAST AI TripoSR and upstream component notices.",
     "disk_bytes": 1677248183,
+    "output_capability": "albedo",
     "measurement": {
-      "seconds": 34.61,
-      "peak_system_vram": 5041,
+      "seconds": 109.73,
+      "peak_system_vram": 4374,
       "compute": "8.6",
       "total_vram": 8192,
       "profile": "LOW_VRAM",
-      "note": "Single transparent toolbox fixture. Timing includes loading, Blender import and candidate optimization. Source GLB retained vertex color."
+      "note": "Single transparent toolbox fixture with a 512 px baked albedo. Time includes model loading, UV baking and Blender source import."
     }
   },
   {
@@ -600,7 +604,8 @@
       "triposg"
     ],
     "attribution": "VAST AI TripoSG and upstream component notices.",
-    "disk_bytes": 7946490684
+    "disk_bytes": 7946490684,
+    "output_capability": "geometry"
   },
   {
     "id": "flux-klein",
@@ -1038,7 +1043,8 @@
     "commercial_game": {
       "status": "conditional",
       "terms": "Commercial game output is permitted under the reviewed local workflow, subject to the DINOv3 License. DINOv3 has no revenue cap or game-output territory clause. Its use is subject to trade controls and listed end-use restrictions. DINOv3 redistribution requires its license, and research publications require acknowledgement. Use references you own or have permission to use."
-    }
+    },
+    "output_capability": "pbr"
   },
   {
     "id": "flux-klein-bf16",

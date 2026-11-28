@@ -39,14 +39,14 @@ export type Optimization = {
 export type Bible = {
   schema_version: 1; style: string; palette: string[]; materials: string[]; positive: string;
   color_policy: ColorPolicy; semantic_materials: Record<string, SemanticMaterial>; default_material: string | null;
-  negative: string; geometry: string; triangle_budgets: Record<string, number>; texture_size: number;
+  negative: string; geometry: string; triangle_budgets: Record<string, number>; vertex_budgets?: Record<string, number>; texture_size: number;
   material_rules: string; meters_per_unit: number; coordinates: string; prompt_rules: string[];
   presets: Record<string, string>; export_presets: Record<string, ExportPreset>;
 };
 export type BibleVersion = { version: number; body: Bible };
 export type Material = { name: string; base_color: number[]; metallic?: number; roughness?: number; maps: Record<string, {image: string; channel: string}> };
 export type Report = {
-  object_count: number; triangles: number; vertices: number; uv_present: boolean; valid: boolean;
+  object_count: number; triangles: number; vertices: number; vertex_budget?: number | null; uv_present: boolean; valid: boolean;
   bounds: number[][]; objects: { id: string; name: string; triangles: number; dimensions: number[]; materials: string[] }[];
   materials: Material[]; textures: {name: string; size: number[]; missing: boolean}[];
   issues: Issue[]; art_bible?: Compliance; optimization?: Optimization[]; review_required?: boolean;
@@ -58,12 +58,15 @@ export type Asset = {
 };
 export type Revision = {
   id: string; created: string; parent: string | null; body: {preview: string; blend: string; report_file: string;
-  report: Report; provenance: {kind: string; request?: string; model?: Model; regions?: Region[]};
+  report: Report; provenance: {kind: string; request?: string; model?: Model; regions?: Region[]; auto_optimize?: boolean};
   approval?: {bible_version: number; category: string; review_notes: string; validation: Report}};
 };
 export type AssetDetail = Asset & {revisions: Revision[]; exports: {file: string; created: string; revision: string}[]};
 export type Source = {id: string; kind: string; name: string; body?: {seed?: number; prompt?: string; composed_prompt?: string}};
 export type CommercialGameUse = {status: 'reviewed'|'conditional'|'non_commercial'|'review_required'; terms: string};
+export const outputCapabilities = {pbr: 'Full PBR Textured', albedo: 'Albedo Textured',
+  vertex_colors: 'Vertex Colors Only', geometry: 'Geometry Only'};
+export const isTextured = (model: Model) => model.output_capability === 'pbr' || model.output_capability === 'albedo';
 export type Model = {
   id: string; name: string; license: string; operation: string; provider: string;
   size: number; installed: boolean; selected: boolean; vram: string;
@@ -71,6 +74,7 @@ export type Model = {
   family: string; version: string; variant: string; precision: string; capability: string;
   dependencies: string[]; commercial: string; verification: string; attribution: string; traits: string[];
   selection_scope?: string; source_type: string; compatibility?: Compatibility; commercial_game?: CommercialGameUse;
+  output_capability?: keyof typeof outputCapabilities; workflow_default?: boolean; source_texture_max?: number | null;
 };
 export type Execution = {profile: string; total_vram: number; free_vram: number; evidence: string; features: string[]; note: string};
 export type Compatibility = {status: 'compatible'|'setup_required'|'incompatible'; confidence: string; reasons: string[];

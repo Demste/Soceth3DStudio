@@ -12,6 +12,24 @@ PROFILES = {
 PROFILES["QUALITY"] = PROFILES["HIGH_QUALITY"]
 
 
+def texture_ceiling(model, execution):
+    if model.get("output_capability") == "albedo":
+        return 2048
+    if model.get("output_capability") == "pbr":
+        return PROFILES[(execution or model["configs"][0])["profile"]]["texture"]
+    return None
+
+
+def texture_resolution(model, execution, requested, project_limit):
+    ceiling = texture_ceiling(model, execution)
+    if requested is None:
+        return min(project_limit, ceiling) if ceiling else None
+    if not ceiling or requested > ceiling:
+        raise ValueError(f"This model and execution profile support source textures up to {ceiling}px."
+                         if ceiling else "This model does not generate image textures.")
+    return requested
+
+
 def node(kind, **inputs):
     return {"class_type": kind, "inputs": inputs}
 

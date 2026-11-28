@@ -4,7 +4,8 @@ import json
 import urllib.request
 from pathlib import Path
 
-pins = [tuple(line.split("==", 1)) for path in (Path("requirements.lock.txt"), Path("shared/local3d-requirements.txt"))
+pins = [tuple(line.split("==", 1)) for path in (Path("requirements.lock.txt"), Path("shared/local3d-requirements.txt"),
+                                               Path("shared/triposr-texture-requirements.txt"))
         for line in path.read_text().splitlines() if line and not line.startswith("#") and "==" in line]
 queries = [{"package": {"ecosystem": "PyPI", "name": package}, "version": version} for package, version in pins]
 request = urllib.request.Request("https://api.osv.dev/v1/querybatch",

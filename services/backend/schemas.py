@@ -62,6 +62,7 @@ class Bible(Strict):
     negative: str = Field(default="text, watermark, cropped objects, busy background", max_length=2000)
     geometry: Text = "Stylized"
     triangle_budgets: dict[Text, Budget] = Field(default_factory=lambda: {"Prop": 5000, "Character": 20000, "Environment": 15000}, max_length=40)
+    vertex_budgets: dict[Text, Budget] = Field(default_factory=dict, max_length=40)
     texture_size: TextureSize = 1024
     material_rules: str = Field(default="Metallic/roughness PBR", max_length=2000)
     meters_per_unit: Scale = 1
@@ -120,6 +121,9 @@ class JobRequest(Strict):
     preset: Text | None = None
     mode: Literal["background", "interactive"] = "background"
     triangles: Budget | None = None
+    source_texture_size: TextureSize | None = None
+    auto_optimize: bool = True
+    allow_limited_3d: bool = False
     bake: bool = False
     profile: OptimizationProfile = "balanced"
     create_lod: bool = False
@@ -130,6 +134,10 @@ class JobRequest(Strict):
 
     @model_validator(mode="after")
     def mask_size(self):
+        if self.kind != "generate" and (self.source_texture_size is not None or not self.auto_optimize or self.allow_limited_3d):
+            raise ValueError("Source textures and automatic optimization are settings for Image-to-3D jobs.")
+        if self.allow_limited_3d and not self.model:
+            raise ValueError("Select a specific model to enable limited 3D output.")
         if self.sampling is not None:
             if self.kind != "concept" or any(
                 (key == "concept_size" and value not in (512, 768, 1024)) or

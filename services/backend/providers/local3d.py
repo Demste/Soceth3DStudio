@@ -15,6 +15,8 @@ from ..hardware import FLAGS, inspect
 
 WORKER = ROOT / "integrations/local3d_worker.py"
 REQUIREMENTS = ROOT / "shared/local3d-requirements.txt"
+ATLAS = ROOT / "integrations/triposr_atlas.py"
+ATLAS_REQUIREMENTS = ROOT / "shared/triposr-texture-requirements.txt"
 SOURCES = {
     "triposr": ("TripoSR", "107cefdc244c39106fa830359024f6a2f1c78871", "tsr", 31282920,
                 "a7b3871a1b4377bef96cbfb99bdc952bdd4f5df9f65fea4208d978a343fd1162"),
@@ -23,21 +25,26 @@ SOURCES = {
 }
 
 
-def package_path(python):
+def package_path(python, requirements=REQUIREMENTS):
     executable = Path(python)
     identity = hashlib.sha256(f"{executable}:{executable.stat().st_mtime_ns}".encode() +
-                              REQUIREMENTS.read_bytes()).hexdigest()[:20]
+                              requirements.read_bytes()).hexdigest()[:20]
     return RUNTIME / "local3d" / ("packages-" + identity)
 
 
 def source_path(workflow):
-    return RUNTIME / "local3d" / SOURCES[workflow][1]
+    revision = SOURCES[workflow][1]
+    return RUNTIME / "local3d" / (revision + "-atlas" if workflow == "triposr" else revision)
 
 
 def ready(workflow, python):
     if not python or not Path(python).is_file():
         return False
     packages = package_path(python)
+    if workflow == "triposr":
+        atlas = package_path(sys.executable, ATLAS_REQUIREMENTS)
+        return (packages.is_dir() and atlas.is_dir()
+                and (source_path(workflow) / (".soceth-ready-" + packages.name + "-" + atlas.name)).is_file())
     return packages.is_dir() and (source_path(workflow) / (".soceth-ready-" + packages.name)).is_file()
 
 
@@ -88,6 +95,11 @@ def adapt_source(workflow, source):
         replace("tsr/models/tokenizers/image.py",
                 'hf_hub_download(\n                    repo_id=self.cfg.pretrained_model_name_or_path,\n                    filename="config.json",\n                )',
                 "self.cfg.pretrained_model_name_or_path, local_files_only=True")
+        # UV packing and WGL rasterization run under Studio's Python. The CUDA
+        # process evaluates the TripoSR color field at the resulting positions.
+        replace("tsr/bake_texture.py", "import torch\n", "")
+        replace("tsr/bake_texture.py", "import trimesh\n", "")
+        replace("tsr/bake_texture.py", "    positions = torch.tensor(", "    import torch\n    positions = torch.tensor(")
     else:
         replace("triposg/inference_utils.py", "from diso import DiffDMC\n", "")
         replace("triposg/inference_utils.py", "dmc = DiffDMC(", "from diso import DiffDMC\n        dmc = DiffDMC(")
@@ -122,6 +134,19 @@ def install_source(workflow, ctx):
     return target
 
 
+def install_packages(python, requirements, ctx, *, wheels_only=False):
+    packages = package_path(python, requirements)
+    if not packages.is_dir():
+        with tempfile.TemporaryDirectory(dir=packages.parent) as temp:
+            staged = Path(temp) / "packages"
+            process([sys.executable, "-m", "pip", "--python", python, "install", "--no-deps",
+                     "--disable-pip-version-check", "--index-url", "https://pypi.org/simple",
+                     *(["--only-binary=:all:"] if wheels_only else []),
+                     "--target", str(staged), "-r", str(requirements)], ctx, requirements.stem + ".log", 900)
+            staged.replace(packages)
+    return packages
+
+
 def provision(model, ctx):
     workflow = model["workflow"]
     runtime = inspect(probe=True)["runtime"]
@@ -131,18 +156,17 @@ def provision(model, ctx):
     if ready(workflow, python):
         return
     source = install_source(workflow, ctx)
-    packages = package_path(python)
-    if not packages.is_dir():
-        ctx.stage("Preparing isolated 3D dependencies")
-        with tempfile.TemporaryDirectory(dir=source.parent) as temp:
-            staged = Path(temp) / "packages"
-            process([sys.executable, "-m", "pip", "--python", python, "install", "--no-deps",
-                     "--disable-pip-version-check", "--index-url", "https://pypi.org/simple",
-                     "--target", str(staged), "-r", str(REQUIREMENTS)], ctx, "packages.log", 900)
-            staged.replace(packages)
+    ctx.stage("Preparing isolated 3D dependencies")
+    packages = install_packages(python, REQUIREMENTS, ctx)
+    receipt = packages.name
+    if workflow == "triposr":
+        atlas = install_packages(sys.executable, ATLAS_REQUIREMENTS, ctx, wheels_only=True)
+        ctx.stage("Verifying TripoSR UV and OpenGL baking")
+        process([sys.executable, "-s", "-B", str(ATLAS), str(source), str(atlas)], ctx, "atlas-check.log", 180)
+        receipt += "-" + atlas.name
     ctx.stage("Verifying local 3D runtime")
     process([python, "-s", "-B", str(WORKER), workflow, str(source), str(packages)], ctx, "provider-check.log", 180)
-    (source / (".soceth-ready-" + packages.name)).touch()
+    (source / (".soceth-ready-" + receipt)).touch()
 
 
 def model_files(model, registered):
@@ -186,8 +210,13 @@ class Local3D:
             raise ValueError(f"This local 3D profile needs {execution['free_vram']} MiB of free GPU memory.")
         device = max(candidates, key=lambda row: row["total"])
         spec = ctx.out / "local3d.json"
-        write_json(spec, {"files": files, "image": str(inputs["image"]), "target": str(inputs["target"]),
-                          "seed": inputs["seed"], "device": f"cuda:{device['index']}"})
+        options = {"files": files, "image": str(inputs["image"]), "target": str(inputs["target"]),
+                   "seed": inputs["seed"], "device": f"cuda:{device['index']}"}
+        if workflow == "triposr":
+            options.update(texture_resolution=inputs["texture_limit"], atlas_command=[
+                sys.executable, "-s", "-B", str(ATLAS), str(source_path(workflow)),
+                str(package_path(sys.executable, ATLAS_REQUIREMENTS))])
+        write_json(spec, options)
         ctx.stage("Reconstructing with " + model["name"])
         process([python, "-s", "-B", str(WORKER), workflow, str(source_path(workflow)), str(package_path(python)),
                  "--job", str(spec)], ctx, "reconstruction.log", 10800)

@@ -25,6 +25,27 @@ public static class UnityAcceptance
         var material = renderer.sharedMaterial;
         if (!material || material.shader.name != "Universal Render Pipeline/Lit" || !material.GetTexture("_BaseMap"))
             throw new Exception("URP/Lit texture mapping was not imported.");
+        if (args.Contains("-socethAlbedo"))
+        {
+            if (material.IsKeywordEnabled("_NORMALMAP") || material.IsKeywordEnabled("_METALLICSPECGLOSSMAP"))
+                throw new Exception("An albedo-only asset enabled additional mapped channels.");
+            var albedo = (Texture2D)material.GetTexture("_BaseMap");
+            var path = AssetDatabase.GetAssetPath(albedo);
+            var importer = AssetImporter.GetAtPath(path) as TextureImporter;
+            if (!importer || !importer.sRGBTexture || albedo.width != 512 || albedo.height != 512)
+                throw new Exception("Expected a 512px sRGB base-color atlas.");
+            importer.isReadable = true;
+            importer.SaveAndReimport();
+            albedo = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            var uv = renderer.GetComponent<MeshFilter>().sharedMesh.uv;
+            if (uv.Length < 3) throw new Exception("The FBX had no texture UVs.");
+            var colors = uv.Where((_, index) => index % 97 == 0)
+                .Select(value => albedo.GetPixelBilinear(value.x, value.y)).ToArray();
+            if (!colors.Any(color => color.r > 0.3f && color.r > color.b * 1.5f) ||
+                !colors.Any(color => color.b > color.r * 1.15f))
+                throw new Exception("The toolbox's warm and cool atlas colors were not sampled by the imported UVs.");
+            Debug.Log("SOCETH ALBEDO PASSED. Bound 512px sRGB atlas, sampled " + colors.Length + " FBX UV coordinates.");
+        }
         if (args.Contains("-socethPbr"))
         {
             if (!material.GetTexture("_BumpMap") || !material.IsKeywordEnabled("_NORMALMAP") ||

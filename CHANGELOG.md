@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2
+
+- Made UV-textured models the standard Image-to-3D choices. TripoSG is available per job in Advanced Mode.
+- Added TripoSR UV unwrapping and baked albedo using an isolated Windows OpenGL process.
+- Added embedded texture and material checks for generated GLBs, Blender previews, and Unity exports.
+- Added per-job source texture resolution, optional automatic mesh optimization, and Art Bible vertex budgets.
+- Added Windows setup status and access requirements for Stable Fast 3D and SPAR3D in Model Manager.
+
 ## 0.2.1
 
 - Added separately selectable TRELLIS.2 INT8 and BF16, TripoSR vertex-color GLB and TripoSG geometry GLB.

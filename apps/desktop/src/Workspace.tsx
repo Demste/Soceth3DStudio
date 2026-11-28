@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Box, ClipboardCheck, Download, ImagePlus, Layers3, RotateCcw, Send, Sparkles, Upload, X } from 'lucide-react';
-import { AssetDetail, Bible, Job, Model, OptimizationProfile, Region, Revision, Source, System, media, optimizationProfiles, split, stageActive, time } from './api';
+import { AssetDetail, Bible, Job, Model, OptimizationProfile, Region, Revision, Source, System, isTextured, media, optimizationProfiles, outputCapabilities, split, stageActive, time } from './api';
 import { Inspector } from './StudioPanels';
 import { Viewport } from './Viewport';
 import { ArtCompliance, OptimizationResult, RegionEditor } from './PaletteTools';
@@ -16,6 +16,8 @@ export function Generation({bible, sources, models, upload, submit, busy, chosen
   const [mode, setMode] = useState<'reference' | 'concept' | 'import'>('reference');
   const [model2d, setModel2d] = useState('');
   const [model3d, setModel3d] = useState('');
+  const [textureSize, setTextureSize] = useState('');
+  const [autoOptimize, setAutoOptimize] = useState(false);
   const [samplingSize, setSamplingSize] = useState('');
   const [samplingSteps, setSamplingSteps] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -39,9 +41,17 @@ export function Generation({bible, sources, models, upload, submit, busy, chosen
     <select aria-label={operation === 'generate' ? 'Image-to-3D model' : 'Text-to-image model'} value={value} onChange={e => change(e.target.value)}>
       <option value="">Project default</option>{models.filter(item => item.operation === operation).map(item =>
         <option key={item.id} value={item.id}>{item.name}{item.installed ? '' : ' · download required'}</option>)}</select>;
-  const chosenModel = (kind: string) => models.find(item => item.operation === kind && item.selected)?.name || 'Automatic recommendation';
-  const active3d = models.find(item => item.operation === 'generate' &&
-    (advanced && model3d ? item.id === model3d : item.selected));
+  const chosenModel = (kind: string) => models.find(item => item.operation === kind && item.workflow_default)?.name || 'Automatic recommendation';
+  const choices3d = models.filter(item => item.operation === 'generate' && (advanced || isTextured(item)));
+  const explicit3d = choices3d.find(item => item.id === model3d);
+  const active3d = explicit3d ?? choices3d.find(item => item.workflow_default);
+  const limited = Boolean(explicit3d && !isTextured(explicit3d));
+  const textureMaximum = active3d?.source_texture_max ?? 0;
+  const exceedsTextureMaximum = Boolean(textureMaximum && textureSize && Number(textureSize) > textureMaximum);
+  const generationSettings = {
+    ...(explicit3d && {model: explicit3d.id}), ...(limited && {allow_limited_3d: true}),
+    ...(textureMaximum && textureSize && {source_texture_size: Number(textureSize)}), auto_optimize: autoOptimize,
+  };
   const sampling = {...(advanced && samplingSize && {concept_size:Number(samplingSize)}),
     ...(advanced && samplingSteps && {concept_steps:Number(samplingSteps)})};
   return <section className="panel stack generation"><h2><Sparkles size={17}/>Create asset</h2>
@@ -72,11 +82,26 @@ export function Generation({bible, sources, models, upload, submit, busy, chosen
         <option value="">{mode === 'concept' ? 'Select a concept' : 'Select a reference'}</option>
         {sources.filter(item => mode === 'concept' ? item.kind === 'concept' : true).map(item => <option key={item.id} value={item.id}>{item.body?.prompt || item.name}{item.body?.seed !== undefined ? ' · ' + item.body.seed : ''}</option>)}</select></label>
       {selected && <div className="reference-frame"><img src={media(selected.id)} alt={selected.body?.prompt || selected.name}/>{selected.body?.seed !== undefined && <span>Seed {selected.body.seed}</span>}</div>}
-      {advanced ? <><label>Image-to-3D model{pick('generate', model3d, setModel3d)}</label>
-      <label>Seed (optional)<input type="number" min="0" max={Number.MAX_SAFE_INTEGER} value={seed} onChange={e => setSeed(e.target.value)} placeholder="Random"/></label></>
-      : <p className="small">{chosenModel('generate')}</p>}
+      <label>Image-to-3D model<select aria-label="Image-to-3D model" value={explicit3d?.id ?? ''} onChange={e => {
+        setModel3d(e.target.value); setTextureSize('');
+      }}>
+        <option value="">Project default · {chosenModel('generate')}</option>
+        {choices3d.map(item => <option key={item.id} value={item.id}>{item.name}
+          {item.output_capability && ' · ' + outputCapabilities[item.output_capability]}
+          {item.installed ? '' : ' · download required'}</option>)}
+      </select></label>
+      {limited && <p className="small">{active3d?.output_capability === 'geometry' ?
+        'Geometry only. The model generates no UV texture or surface color.' : 'Surface color is stored on vertices. The model generates no UV texture.'}</p>}
       {active3d?.provider === 'local3d' && active3d.traits.map(trait => <p className="small" key={trait}>{trait}</p>)}
-      <button className="primary" disabled={!selected || !category.trim() || busy} onClick={() => submit('generate', {...request,file:selected?.id, model:advanced && model3d || undefined})}>
+      {textureMaximum > 0 && <label>Source texture resolution<select value={textureSize} onChange={e => setTextureSize(e.target.value)}>
+        <option value="">Automatic · {Math.min(bible.texture_size, textureMaximum)} px</option>
+        {[256, 512, 1024, 2048].filter(size => size <= textureMaximum || size === Number(textureSize)).map(size =>
+          <option key={size} value={size} disabled={size > textureMaximum}>{size} px</option>)}</select></label>}
+      {exceedsTextureMaximum && <p className="small">This profile supports source textures up to {textureMaximum} px.</p>}
+      <label className="check"><input type="checkbox" checked={autoOptimize} onChange={e => setAutoOptimize(e.target.checked)}/>Optimize a separate candidate after generation</label>
+      {advanced && <label>Seed (optional)<input type="number" min="0" max={Number.MAX_SAFE_INTEGER} value={seed} onChange={e => setSeed(e.target.value)} placeholder="Random"/></label>}
+      <button className="primary" disabled={!selected || !category.trim() || busy || exceedsTextureMaximum}
+        onClick={() => submit('generate', {...request, file:selected?.id, ...generationSettings})}>
         <Sparkles size={17}/>{mode === 'concept' || selected?.kind === 'concept' ? 'Approve concept & generate 3D' : 'Generate 3D'}</button>
     </>}
   </section>;
@@ -227,7 +252,7 @@ export function AssetTools({asset, revision, bible, bibleVersion, system, jobs, 
           <Viewport minimal url={media(preview.preview)} name="Proposed project colors"/></div>
         <ArtCompliance report={preview.report?.art_bible} bible={bible} version={bibleVersion}/>
       </div></div>}
-      {!sourceStage && !lodStage && !approved && <><label>Reviewed exceptions (when required)
+      {(!sourceStage || revision.body.provenance.auto_optimize === false) && !lodStage && !approved && <><label>Reviewed exceptions (when required)
         <textarea value={review} maxLength={2000} onChange={e => setReview(e.target.value)}
           placeholder="Document any accepted geometry, material or texture warnings."/>
       </label><button disabled={busy || !active} onClick={() => submit('approve', {...base, review_notes: review})}>Approve Game Asset</button></>}

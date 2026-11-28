@@ -8,8 +8,9 @@ import httpx
 
 from ..core import RUNTIME, ROOT, db, now, query, safe, setting, write_json
 from ..locations import configured, location
-from .registry import load
+from .registry import TEXTURED, load
 from .recommendations import PRIMARY, recommend
+from .workflows import texture_ceiling
 
 COMFY_DATA = location("comfy_data", RUNTIME / "comfy-data")
 MODELS = location("models", COMFY_DATA / "models")
@@ -36,17 +37,31 @@ def local(timeout=10):
     return httpx.Client(timeout=timeout, trust_env=False)
 
 
-def model_for(operation, identifier=None, project=None, configuration=None):
-    preferred, _ = selection(operation, project)
-    identifier = identifier or preferred
+def workflow_selection(operation, project, all_models):
+    identifier, scope = selection(operation, project)
+    if operation == "generate" and identifier and all_models.get(identifier, {}).get("output_capability") not in TEXTURED:
+        if scope == "project":
+            global_id, _ = selection(operation)
+            if all_models.get(global_id, {}).get("output_capability") in TEXTURED:
+                return global_id, "global"
+        return None, "automatic"
+    return identifier, scope
+
+
+def model_for(operation, identifier=None, project=None, configuration=None, *, allow_limited=False):
     all_models = registry()
+    preferred, _ = workflow_selection(operation, project, all_models)
+    identifier = identifier or preferred
     if not identifier and configuration:
         identifier = configuration["recommendations"].get(operation, {}).get("model")
     model = all_models.get(identifier) if identifier else next((candidate for candidate in all_models.values()
                           if candidate["operation"] == operation and candidate["verification"] == "measured"
-                          and not candidate.get("manual_only")), None)
+                          and not candidate.get("manual_only") and (operation != "generate" or
+                              candidate.get("output_capability") in TEXTURED)), None)
     if not model or model["operation"] != operation:
         raise ValueError("Select a registered model for this operation. A saved choice may be missing from the catalog.")
+    if operation == "generate" and model.get("output_capability") not in TEXTURED and not allow_limited:
+        raise ValueError("This model produces limited output. Explicitly select it in Advanced Mode to run it.")
     return model
 
 
@@ -157,20 +172,27 @@ def is_ready(model, tags=None):
 def status(project=None, configuration=None):
     tags = ollama_tags() if configuration is None else configuration["tags"]
     rows = []
-    for model in registry().values():
+    catalog = registry()
+    for model in catalog.values():
         old = installation_for(model)
         installed = is_ready(model, tags)
+        default, _ = workflow_selection(model["operation"], project, catalog)
         chosen, scope = selection(model["operation"], project)
         if not chosen and configuration:
             chosen = configuration["recommendations"].get(model["operation"], {}).get("model")
         source = ("Custom" if model.get("custom") else "Existing Local"
                   if installed and (not old or not old["body"].get("owned")) else "Managed")
+        if not default and configuration:
+            default = configuration["recommendations"].get(model["operation"], {}).get("model")
+        state = configuration["models"][model["id"]] if configuration else None
         rows.append({**model, "installed": installed, "selected": chosen == model["id"],
+                     "workflow_default": default == model["id"],
+                     "source_texture_max": texture_ceiling(model, state["execution"] if state else None),
                      "selection_scope": scope if chosen == model["id"] else None, "source_type": source,
                      "size": model["disk_bytes"], "installation": ({"created": old["created"],
                         "managed": bool(old["body"].get("owned")),
                         "removable": bool(old["body"].get("owned")) or model["provider"] in {"comfy", "local3d"}} if old else None),
-                     "compatibility": configuration["models"][model["id"]] if configuration else None})
+                     "compatibility": state})
     return rows
 
 

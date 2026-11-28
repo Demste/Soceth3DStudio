@@ -20,6 +20,8 @@ from .providers.discovery import configuration, discover, download_plan
 from .providers.inference import random_seed
 from .providers.models import CATALOG, COMFY, OLLAMA, local, model_for, registry, removal_plan, status
 from .providers.recommendations import DEFAULT_POLICY, PRIMARY
+from .providers.registry import TEXTURED
+from .providers.workflows import texture_resolution
 from .routes import active_bible, asset_row, found, project_row
 from .schemas import Bible, ID, JobRequest, Strict, Text
 from .updates import check as check_updates
@@ -210,6 +212,8 @@ def select_model(body: ModelSelection):
     operation = item["operation"] if item else body.operation
     if operation not in PRIMARY or (body.operation and body.operation != operation):
         raise HTTPException(422, "Select the matching generation or editing capability.")
+    if operation == "generate" and item and item.get("output_capability") not in TEXTURED:
+        raise HTTPException(422, "Select limited 3D models per job in Advanced Mode.")
     if body.project:
         project_row(body.project)
     prefix = f"{body.project}:" if body.project else ""
@@ -285,7 +289,12 @@ def submit(project: ID, body: JobRequest):
         payload["category"] = asset["category"]
     if kind in {"concept", "interpret", "generate"}:
         state = configuration(project)
-        item = model_for(kind, body.model, project, state)
+        try:
+            item = model_for(kind, body.model, project, state, allow_limited=body.allow_limited_3d)
+            if kind == "generate" and body.source_texture_size is not None:
+                texture_resolution(item, state["models"][item["id"]]["execution"], body.source_texture_size, None)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
         candidate = state["models"][item["id"]]
         payload["model"] = item["id"]
         payload["execution"] = candidate["execution"]

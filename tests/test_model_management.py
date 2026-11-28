@@ -13,6 +13,7 @@ from services.backend import core
 from services.backend.media import image_data
 from services.backend.providers import discovery, models
 from services.backend.providers.recommendations import recommend
+from services.backend.providers.workflows import texture_resolution
 from tests.test_recommendations import COMPATIBLE, hardware
 from integrations.local3d_worker import prepare_image
 
@@ -135,10 +136,29 @@ class ModelManagement(unittest.TestCase):
         self.assertEqual(ampere["models"]["triposg"]["status"], "incompatible")
         for model in ("triposr", "triposg", "trellis2-bf16"):
             self.assertEqual(blackwell["models"][model]["status"], "compatible")
-            self.assertEqual(models.model_for("generate", model, configuration=blackwell)["id"], model)
+            self.assertEqual(models.model_for("generate", model, configuration=blackwell,
+                                             allow_limited=model == "triposg")["id"], model)
         self.assertEqual(blackwell["recommendations"]["generate"]["model"], "pixal3d")
         failed = recommend(models.CATALOG, hardware("12.0", 16384, 15000, "failed"), deps, set())
         self.assertEqual(failed["models"]["triposg"]["status"], "incompatible")
+
+    def test_geometry_only_selection_stays_opt_in_after_upgrade(self):
+        project = "0" * 32
+        prefs = {project + ":model:generate": "triposg", "model:generate": "triposr"}
+        with patch.object(models, "setting", side_effect=lambda key, default=None: prefs.get(key, default)):
+            self.assertEqual(models.selection("generate", project), ("triposg", "project"))
+            self.assertEqual(models.model_for("generate", project=project)["id"], "triposr")
+            with self.assertRaisesRegex(ValueError, "Advanced Mode"):
+                models.model_for("generate", "triposg", project)
+            self.assertEqual(models.model_for("generate", "triposg", project, allow_limited=True)["id"], "triposg")
+
+    def test_source_texture_size_is_independent_of_game_texture_limit(self):
+        self.assertEqual(texture_resolution(models.CATALOG["triposr"], None, 2048, 256), 2048)
+        self.assertEqual(texture_resolution(models.CATALOG["pixal3d"], {"profile": "LOW_VRAM"}, None, 4096), 512)
+        with self.assertRaisesRegex(ValueError, "512px"):
+            texture_resolution(models.CATALOG["pixal3d"], {"profile": "LOW_VRAM"}, 1024, 4096)
+        with self.assertRaisesRegex(ValueError, "does not generate"):
+            texture_resolution(models.CATALOG["triposg"], None, 256, 1024)
 
     def test_transparent_palette_upload_and_standalone_preprocessing(self):
         reference = Image.new("P", (96, 64))

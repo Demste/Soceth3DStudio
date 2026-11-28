@@ -60,6 +60,7 @@ export function ArtBible({entry, references, save, upload, importConfig, exportC
 }) {
   const [value, setValue] = useState(entry.body);
   const [budgets, setBudgets] = useState(Object.entries(value.triangle_budgets).map(([key, n]): [string, string] => [key, String(n)]));
+  const [vertexBudgets, setVertexBudgets] = useState(Object.entries(value.vertex_budgets ?? {}).map(([key, n]): [string, string] => [key, String(n)]));
   const [presets, setPresets] = useState(Object.entries(value.presets));
   const [exports, setExports] = useState(Object.entries(value.export_presets));
   const [semantic, setSemantic] = useState(Object.entries(entry.body.semantic_materials ?? {}));
@@ -69,12 +70,13 @@ export function ArtBible({entry, references, save, upload, importConfig, exportC
   const change = <K extends keyof Bible>(key: K, next: Bible[K]) => setValue({...value, [key]: next});
   function submit(event: FormEvent) {
     event.preventDefault();
-    if ([budgets, presets, exports, semantic].some(rows => {
+    if ([budgets, vertexBudgets, presets, exports, semantic].some(rows => {
       const names = rows.map(([key]) => key.trim());
       return names.some(name => !name) || new Set(names).size !== names.length;
     })) {error('Give every budget, preset, and semantic material a unique name.'); return;}
     const semantic_materials = Object.fromEntries(semantic.map(([name, rule]) => [name.trim(), rule]));
     save({...value, semantic_materials, default_material: value.default_material?.trim() || null, triangle_budgets: Object.fromEntries(budgets.map(([key, n]) => [key.trim(), Number(n)])),
+      vertex_budgets: Object.fromEntries(vertexBudgets.map(([key, n]) => [key.trim(), Number(n)])),
       presets: Object.fromEntries(presets), export_presets: Object.fromEntries(exports),
       materials: split(materials), prompt_rules: rules.split('\n').map(v => v.trim()).filter(Boolean), texture_size: Number(texture)});
   }
@@ -119,10 +121,12 @@ export function ArtBible({entry, references, save, upload, importConfig, exportC
         <button type="button" className="compact" onClick={() => setSemantic([...semantic, ['', emptyMaterial]])}><Plus size={15}/>Add material category</button>
       </section>
       <section className="panel stack"><h2>Production targets</h2>
-        <div className="two-col"><label>Texture resolution<select value={texture} onChange={e => setTexture(e.target.value)}>{[256, 512, 1024, 2048, 4096].map(n => <option key={n} value={n}>{n} px</option>)}</select></label>
+        <div className="two-col"><label>Final texture limit<select value={texture} onChange={e => setTexture(e.target.value)}>{[256, 512, 1024, 2048, 4096].map(n => <option key={n} value={n}>{n} px</option>)}</select></label>
           <label>Meters per source unit<input type="number" min="0.002" max="100" step="0.001" value={value.meters_per_unit} onChange={e => change('meters_per_unit', Number(e.target.value))}/></label></div>
         <label>Coordinate standard<input readOnly value={value.coordinates}/></label>
-        <span className="label">Triangle budgets by category</span><PairEditor rows={budgets} onChange={setBudgets} numbers/>
+        <span className="label">Maximum triangles by category</span><PairEditor rows={budgets} onChange={setBudgets} numbers/>
+        <span className="label">Maximum Blender vertices by category</span><PairEditor rows={vertexBudgets} onChange={setVertexBudgets} numbers/>
+        <p className="small">The vertex budget is checked during validation. Optimization targets triangles, and UV seams can split vertices in Unity.</p>
         <h3>Export profiles</h3>
         {exports.map(([name, preset], i) => <ExportEditor key={i} name={name} value={preset}
           onChange={(key, row) => setExports(exports.map((pair, j) => i === j ? [key, row] : pair))}

@@ -40,15 +40,17 @@ Temiz kurulum varsayılan olarak **%LOCALAPPDATA%\\Soceth3DStudio** kullanır. E
 
 **Models** ekranında mevcut ComfyUI modeli veya Hugging Face snapshot klasörü seçin. Studio ağırlıkları hash ile doğrular ve dosyalara referans verir. Yerel Ollama etiketini kaydedebilir veya uyumlu GGUF dosyasını Ollama’ya içe aktarabilirsiniz. **Advanced mode → Local providers** bölümünde localhost portlarını veya mevcut ComfyUI kurulumunu girip Studio’yu yeniden başlatın. Studio tarafından yönetilen ComfyUI harici model yollarını yeniden başlatınca okur. Bağımsız çalıştırılan ComfyUI için aynı arama yollarını sağlayıcı ayarına ekleyin.
 
-Model seçimini tüm projelere veya açık projeye kaydedin. Tek üretim için Advanced modundaki seçiciye geçin. Art Bible, kullandığınız yerel konsept ve rekonstrüksiyon iş akışına uygulanır. Karşılaştırmada aynı giriş, seed ve Art Bible sürümünü kullanın.
+Model seçimini tüm projelere veya açık projeye kaydedin. Workspace’teki Image-to-3D seçicisi tek iş için bir model seçmenizi sağlar. Normal seçicide Pixal3D INT8/BF16, TRELLIS.2 INT8/BF16 ve TripoSR görünür. Yalnızca geometri üreten TripoSG’yi Advanced Mode’da iş bazında seçebilirsiniz. Art Bible yerel konsept ve rekonstrüksiyon iş akışına uygulanır.
 
-TRELLIS.2 INT8 ve BF16 ayrı native ComfyUI seçenekleridir. BF16 16 GiB kartta deneysel ve yalnızca 512 profilidir. TripoSR ve TripoSG için önce CUDA doğrulamasından geçen bir ComfyUI Python yorumlayıcısı kurun. Model Manager ilk kurulumda sabitlenmiş kaynak ve Python paketlerini ayrı bir çalışma klasörüne hazırlar. Bu iki model arka planı önceden kaldırılmış saydam PNG ister. TripoSR vertex rengini, TripoSG dokusuz geometriyi GLB'ye çıkarır. Art Bible doku ayarları bu modellerden yeni PBR dokuları üretmez.
+TRELLIS.2 INT8 ve BF16 ayrı native ComfyUI seçenekleridir. BF16 16 GiB kartta deneysel ve yalnızca 512 profilidir. TripoSR ve TripoSG önceden arka planı kaldırılmış saydam PNG ve CUDA doğrulamasından geçen bir ComfyUI Python yorumlayıcısı ister. Model Manager sabitlenmiş paketleri ayrı çalışma klasörüne kurar. Mevcut TripoSR kaydı için **Prepare runtime** düğmesi UV ve OpenGL ortamını doğrular ve mevcut ağırlıkları kullanır. TripoSR ayrıca OpenGL 3.3 sürücüsü gerektirir. 256, 512, 1024 veya 2048 px UV eşlemeli albedo üretir. TripoSR ve TripoSG ek PBR haritaları üretmez.
+
+**Source texture resolution** üretim dokusunu belirler. Art Bible’daki **Final texture limit** optimizasyon ve üretim doğrulaması için kullanılır. Model ve donanım profili kaynak çözünürlüğünün üst sınırını belirler. **Optimize a separate candidate after generation** seçeneğini kapalı tutarak önce kaynak modeli inceleyebilirsiniz.
 
 ## Blender, low-poly ve Unity
 
 Kurulum **Soceth-Blender-Addon.zip** dosyasını runtime konumunda üretir. Blender’da ZIP’i yükleyin, eklentiyi etkinleştirin ve Studio’nun **Models → Advanced mode → Blender connection** alanında gösterdiği yerel token dosyasını seçin. Bağlandıktan sonra Workspace’teki komut önerisini inceleyip çalıştırın.
 
-Art Bible bütçesine göre optimize edin, gerekli bölgelerde dokuyu eşleyin ve ana revizyonu onaylayın. **Create as LOD** ile ayrı mesafe revizyonu oluşturun. **Unity 6 URP** paketi ana modeli, LOD’ları, dokuları ve Editor içe aktarıcısını içerir. Unity projesine paket içindeki klasörleri ekleyin ve manifestten prefab oluşturun.
+Art Bible kategori başına üçgen ve Blender vertex üst sınırı alır. Optimizasyon aracı seçilen üçgen sayısını hedefler. Vertex bütçesi doğrulamada ölçülür ve UV dikişleri Unity’de ilave vertex oluşturabilir. Gerekli bölgelerde dokuyu eşleyin ve ana revizyonu onaylayın. Otomatik optimizasyonu kapattıysanız kaynak revizyonu inceleyip doğrudan onaylayabilirsiniz. **Create as LOD** ile ayrı mesafe revizyonu oluşturun. **Unity 6 URP** paketi ana modeli, LOD’ları, dokuları ve Editor içe aktarıcısını içerir. Unity projesine paket içindeki klasörleri ekleyin ve manifestten prefab oluşturun.
 
 ## Güncelleme ve geri dönüş
 
@@ -68,11 +70,11 @@ ZIP kurulumunda yeni paketi ve yayınlanan **.sha256** dosyasını indirin. Mevc
 ```powershell
 $env:PYTHONUTF8 = '1'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
-$zip = 'D:/Downloads/Soceth3DStudio-0.2.1-Windows.zip'
+$zip = Join-Path $env:USERPROFILE 'Downloads\Soceth3DStudio-0.2.2-Windows.zip'
 $sha = ((Get-Content -LiteralPath "$zip.sha256" -Raw).Trim() -split '\s+')[0]
 .\stop.ps1
 .\upgrade-release.ps1 -Archive $zip -Sha256 $sha
-& '..\Soceth3DStudio-0.2.1\start.ps1'
+& '..\Soceth3DStudio-0.2.2\start.ps1'
 ```
 
 Yeni sürüm ayrı dizine açılır. Eski kaynak dizini ve uygulama verileri korunur.

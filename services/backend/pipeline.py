@@ -7,10 +7,12 @@ from pathlib import Path
 
 from . import blender
 from .core import ROOT, atomic, db, file_record, now, project_file, query, uid, write_json
-from .media import image_data, validate_glb
+from .media import image_data, validate_glb, validate_textured_glb
 from .providers.inference import PROVIDERS, compose
 from .providers.models import CATALOG, install, is_ready, model_for, remove
 from .providers.discovery import check_candidate_install, register_existing, register_ollama
+from .providers.registry import TEXTURED
+from .providers.workflows import texture_resolution
 from .schemas import Bible, DESTRUCTIVE, Proposal
 
 
@@ -51,10 +53,16 @@ def attach_revision_textures(report, revision):
 
 
 def commit_revision(ctx, asset, parent, output, provenance, source=None, thumbnail=None,
-                    directory=None, complete=True, legacy_textures=None):
+                    directory=None, complete=True, legacy_textures=None, texture_contract=None):
     directory = directory or ctx.out
     report = output["report"]
-    validate_glb(directory / "preview.glb")
+    if texture_contract:
+        preview = validate_textured_glb(directory / "preview.glb", texture_contract)
+        if not report["uv_present"] or not any("base_color" in material["maps"] for material in report["materials"]):
+            raise ValueError("Blender did not preserve the textured material and its UVs.")
+        provenance["preview_textures"] = preview
+    else:
+        validate_glb(directory / "preview.glb")
     if not (directory / "working.blend").is_file():
         raise ValueError("Blender did not write an editable scene.")
     identifier = uid()
@@ -214,10 +222,13 @@ def run(ctx, job):
     category = payload["category"]
     budget = bible["triangle_budgets"].get(category)
     command = {"protocol_version": 1, "kind": kind, "output": str(ctx.out), "triangles": budget,
+               "vertex_budget": bible["vertex_budgets"].get(category),
                "texture_size": bible["texture_size"], "meters_per_unit": bible["meters_per_unit"],
                "bible": bible, "bible_version": payload["bible_version"]}
+    # Older explicitly queued jobs can be retried from their saved history.
+    allow_limited = payload.get("allow_limited_3d", bool(payload.get("model")))
     if kind in {"concept", "generate", "interpret"} and payload.get("model_readiness") == "incompatible":
-        chosen = model_for(kind, payload["model"])
+        chosen = model_for(kind, payload["model"], allow_limited=allow_limited)
         if is_ready(chosen):
             raise ValueError("The selected model cannot run with the current resources. " + " ".join(payload["model_reasons"]))
     if kind == "concept":
@@ -236,29 +247,43 @@ def run(ctx, job):
         return persist(ctx, finish)
     if kind in {"generate", "import"}:
         thumbnail = None
+        texture_contract = None
         asset = {"id": uid(), "name": payload["name"], "category": category, "body": {"tags": []}}
         source, metadata = project_file(project, payload["file"],
             {"reference", "concept"} if kind == "generate" else {"upload_mesh"})
         provenance = {"kind": kind, "bible_version": payload["bible_version"], "input_file": metadata["id"]}
         target = ctx.out / ("original.glb" if kind == "generate" else "original" + source.suffix)
         if kind == "generate":
-            model = model_for(kind, payload["model"])
+            model = model_for(kind, payload["model"], allow_limited=allow_limited)
+            execution = payload.get("execution")
+            size = texture_resolution(model, execution, payload.get("source_texture_size"), bible["texture_size"])
+            capability = model["output_capability"]
+            texture_contract = capability if capability in TEXTURED else None
             image = ctx.out / "reference.png"
             atomic(image, image_data(source))
             thumbnail = io.BytesIO(image.read_bytes())
             provenance.update(PROVIDERS[model["provider"]].run(ctx, model, image=image,
-                seed=payload["seed"], target=target, texture_limit=bible["texture_size"], execution=payload.get("execution")))
+                seed=payload["seed"], target=target, texture_limit=size, execution=execution))
+            provenance.update(output_capability=capability, source_texture_size=size,
+                              auto_optimize=payload.get("auto_optimize", True))
             asset["body"].update(reference=metadata["id"], generation=provenance)
         else:
             shutil.copyfile(source, target)
             asset["body"]["import_file"] = metadata["id"]
         ctx.stage("Validating source mesh")
-        if target.suffix == ".glb":
+        if texture_contract:
+            observed = validate_textured_glb(target, texture_contract)
+            if payload.get("source_texture_size") is not None and observed["base_color_sizes"] != [(size, size)]:
+                raise ValueError(f"The model returned a different base-color resolution than the requested {size}px.")
+            provenance["source_textures"] = observed
+        elif target.suffix == ".glb":
             validate_glb(target)
         command.update(kind="import", source=str(target), source_reconstruction=kind == "generate")
         result = blender.execute(ctx, command)
-        original = commit_revision(ctx, asset, None, result, provenance, target, thumbnail, complete=kind == "import")
-        if kind == "import":
+        source_only = kind == "import" or not payload.get("auto_optimize", True)
+        original = commit_revision(ctx, asset, None, result, provenance, target, thumbnail, complete=source_only,
+                                   texture_contract=texture_contract)
+        if source_only:
             return original
         ctx.stage("Preparing game-ready candidate")
         original_revision = working_revision(asset, original["revision"])
@@ -273,7 +298,7 @@ def run(ctx, job):
                     "The source was saved. Automatic simplification did not pass structural validation."})
             return commit_revision(ctx, asset, original_revision, result,
                                    {"kind": "candidate", "bible_version": payload["bible_version"]},
-                                   directory=destination)
+                                   directory=destination, texture_contract=texture_contract)
         except (ValueError, OSError) as error:
             return persist(ctx, lambda _: {**original, "warning":
                 f"Source reconstruction saved. Game-ready processing needs review: {error}"})
@@ -349,7 +374,8 @@ def run(ctx, job):
     if kind == "cleanup":
         command.update(profile=payload.get("profile", "preserve_structure"),
                        remove_fragments=payload.get("remove_fragments", True), planar=payload.get("planar", True))
-    if kind == "approve" and lifecycle(parent) == "source":
+    if (kind == "approve" and lifecycle(parent) == "source"
+            and parent["body"]["provenance"].get("auto_optimize") is not False):
         raise ValueError("Create a game-ready candidate before approving this reconstruction.")
     if kind in {"palette_apply", "palette_preview"} and bible["color_policy"] == "reference":
         raise ValueError("Choose Guided or Strict Project Palette in the Art Bible to apply project colors.")
@@ -381,6 +407,8 @@ def run(ctx, job):
     if kind == "export":
         if not report["valid"] and not parent["body"].get("approval", {}).get("review_notes"):
             raise ValueError("Validation failed. Review the production report before exporting.")
+        if preset["format"] == "unity" and parent["body"]["provenance"].get("preview_textures"):
+            validate_textured_glb(ctx.out / "package" / (command["slug"] + ".glb"), "textured")
         return commit_export(ctx, asset, parent, output, command)
     if output.get("unchanged"):
         attach_revision_textures(report, parent)
@@ -389,7 +417,15 @@ def run(ctx, job):
             result["warning"] = "The requested optimization did not pass. The main revision was preserved."
         return persist(ctx, lambda _: result)
     originals = collect_legacy_textures(ctx, asset, parent, command)
-    return commit_revision(ctx, asset, parent, output, provenance, legacy_textures=originals)
+    prior_preview = parent["body"]["provenance"].get("preview_textures")
+    texture_contract = None
+    if prior_preview and (kind in {"optimize", "cleanup"} or kind == "edit" and all(
+            operation["type"] in {"decimate_mesh", "cleanup_mesh"} for operation in command["operations"])):
+        # Explicit rebakes may consolidate material maps. They must still retain albedo.
+        texture_contract = ("pbr" if {"normalTexture", "metallicRoughnessTexture"} <= set(prior_preview["maps"])
+                            and not payload.get("bake") else "textured")
+    return commit_revision(ctx, asset, parent, output, provenance, legacy_textures=originals,
+                           texture_contract=texture_contract)
 
 
 def needs_confirmation(proposal):

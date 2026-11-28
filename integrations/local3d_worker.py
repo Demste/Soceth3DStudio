@@ -2,7 +2,9 @@
 
 import argparse
 import json
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -76,6 +78,38 @@ def triposr_state_dict(state):
     return renamed
 
 
+def bake_triposr(mesh, model, scene, options):
+    import numpy as np
+    import torch
+    import trimesh
+    from PIL import Image
+
+    resolution = options["texture_resolution"]
+    with tempfile.TemporaryDirectory(dir=Path(options["target"]).parent) as directory:
+        directory = Path(directory)
+        np.savez(directory / "surface.npz", vertices=mesh.vertices, faces=mesh.faces)
+        subprocess.run([*options["atlas_command"], "--mesh", str(directory), "--resolution", str(resolution)],
+                       stdin=subprocess.DEVNULL, check=True, timeout=180)
+        with np.load(directory / "atlas.npz") as atlas:
+            indices, mapping, uv = atlas["indices"], atlas["vmapping"], atlas["uvs"]
+            positions = atlas["positions"].reshape(-1, 4)
+
+    # The atlas stores model-space positions. Only query texels covered by a
+    # chart or its padding, and keep the OpenGL lower-left origin in the UVs.
+    texels = np.flatnonzero(positions[:, 3])
+    rgb = np.zeros((resolution * resolution, 3), dtype=np.uint8)
+    for block in range(0, len(texels), 8192):
+        pixels = texels[block:block + 8192]
+        samples = torch.from_numpy(positions[pixels, :3].copy()).to(scene.device)
+        color = model.renderer.query_triplane(model.decoder, samples, scene)["color"]
+        rgb[pixels] = color.float().clamp(0, 1).mul(255).round().byte().cpu().numpy()
+    albedo = Image.fromarray(rgb.reshape(resolution, resolution, 3)[::-1])
+    material = trimesh.visual.material.PBRMaterial(name="TripoSR Albedo", baseColorTexture=albedo,
+                                                   metallicFactor=0.0, roughnessFactor=1.0)
+    return trimesh.Trimesh(vertices=mesh.vertices[mapping], faces=indices, vertex_normals=mesh.vertex_normals[mapping],
+                          visual=trimesh.visual.TextureVisuals(uv=uv, material=material), process=False)
+
+
 def triposr(files, image, options):
     import torch
     from omegaconf import OmegaConf
@@ -90,7 +124,8 @@ def triposr(files, image, options):
     model.eval().to(options["device"])
     model.renderer.set_chunk_size(8192)
     scene = model(image, device=options["device"])
-    return model.extract_mesh(scene, has_vertex_color=True, resolution=256)[0]
+    mesh = model.extract_mesh(scene, has_vertex_color=False, resolution=256)[0]
+    return bake_triposr(mesh, model, scene[0], options)
 
 
 def triposg(files, image, options):

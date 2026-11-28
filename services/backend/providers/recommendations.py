@@ -1,6 +1,6 @@
 """Rank compatible execution configurations separately from model quality evidence."""
 
-from .registry import TASKS
+from .registry import TASKS, TEXTURED
 from ..hardware import compute
 
 ORDER = {"LOW_VRAM": 0, "BALANCED": 1, "HIGH_QUALITY": 2, "CUSTOM": 3}
@@ -73,6 +73,7 @@ def recommend(models, hardware, dependencies, installed, requested="AUTO", polic
         candidates = [model for model in models.values() if model["operation"] == operation]
         eligible = [model for model in candidates if model["verification"] == "measured" and not model.get("manual_only")
                     and model["commercial"] in {"permissive", "conditional"}
+                    and (operation != "generate" or model.get("output_capability") in TEXTURED)
                     and states[model["id"]]["status"] != "incompatible"]
 
         def rank(model):

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Activity, BookOpen, Box, ChevronDown, FolderKanban, Gauge, Layers3, Plus, X } from 'lucide-react';
-import { api, Asset, AssetDetail, Bible, BibleVersion, Job, ModelConfiguration, Project, ProjectFields, Source, System, json, media, stageActive } from './api';
+import { api, Asset, AssetDetail, Bible, BibleVersion, Job, ModelConfiguration, Project, ProjectFields, Source, System, isTextured, json, media, stageActive } from './api';
 import { ArtBible, ProjectForm, ProjectList } from './Projects';
 import { AssetTools, Comparison, Generation } from './Workspace';
 import { AssetTiles, Hardware, JobList, Library } from './StudioPanels';
@@ -250,7 +250,7 @@ function App() {
           <section className="stack tight"><div className="row between"><h2>Recent assets</h2><button className="link" onClick={() => go('Library')}>Asset library</button></div><AssetTiles assets={recent.slice(0,6)} open={item => void openAsset(item).catch(error)}/></section>
           <div className="dashboard-split"><section className="panel stack tight"><h2>Running jobs</h2><JobList jobs={activeJobs} {...tasks} empty="No jobs running."/></section>
             <section className="panel stack tight"><div className="row between"><h2>AI models</h2><button className="link" onClick={() => go('Models')}>Manage</button></div>
-              {models.map(item => <div className="row between small" key={item.id}><span>{item.name}</span><span className={item.installed ? 'pill green' : 'pill'}>{item.installed ? 'Installed' : 'Available'}</span></div>)}</section></div>
+              {models.filter(item => item.operation !== 'generate' || system?.advanced || isTextured(item)).map(item => <div className="row between small" key={item.id}><span>{item.name}</span><span className={item.installed ? 'pill green' : 'pill'}>{item.installed ? 'Installed' : 'Available'}</span></div>)}</section></div>
         </div>}
         {ready && screen === 'Projects' && <div className="stack"><div className="screen-heading"><div><h1>Projects</h1><p>{projects.length} game projects</p></div><button className="primary" onClick={() => setProjectForm('new')}><Plus size={17}/>Create project</button></div>
           <ProjectList projects={projects} current={projectId} create={() => setProjectForm('new')} choose={id => void selectProject(id, 'Workspace').catch(error)} edit={setProjectForm}/></div>}

@@ -6,6 +6,7 @@ import os
 import sys
 import threading
 import time
+import traceback
 from pathlib import Path
 from uuid import uuid4
 
@@ -284,6 +285,7 @@ def check(window):
         else:
             results["B · Native 3D viewport and camera controls"] = "blocked: run the Blender QA check first"
     except Exception as exc:
+        traceback.print_exc()
         results["error"] = repr(exc)
     finally:
         print(json.dumps(results, indent=2, ensure_ascii=False), flush=True)
@@ -305,18 +307,38 @@ def check_model_manager(window):
     assert ev("document.body.innerText.includes('FLUX.2 Klein 4B FP8')")
     assert ev("document.body.innerText.includes('Qwen2.5-Coder 7B Q4_K_M')")
     assert ev("!document.body.innerText.includes('Local providers')")
+    assert ev("!document.body.innerText.includes('Geometry Only')")
     ev("""Array.from(document.querySelectorAll('button')).find(button =>
         button.textContent.trim() === 'Apply Recommended Configuration').click()""")
     wait(lambda: ev("document.querySelector('[aria-label=\"Download plan\"]') !== null"),
          description="the plan before any model installation")
     ev(f"({mode}).click()")
     wait(lambda: ev("document.body.innerText.includes('Local providers')"), description="Advanced mode")
+    assert ev("document.body.innerText.includes('Geometry Only')")
     ev("location.reload()")
     wait(lambda: ev(f"({mode})?.getAttribute('aria-pressed') === 'true'"), description="advanced preference after reload")
     ev(f"({mode}).click()")
     wait(lambda: ev(f"({mode})?.getAttribute('aria-pressed') === 'false'"))
+    ev("Array.from(document.querySelectorAll('nav button')).find(button => button.textContent.trim() === 'Workspace').click()")
+    selector = """document.querySelector('[aria-label="Image-to-3D model"]')"""
+    choices = f"Array.from(({selector})?.options ?? []).map(option => option.value).slice(1)"
+    primary = {"pixal3d", "pixal3d-bf16", "trellis2-int8", "trellis2-bf16", "triposr"}
+    wait(lambda: set(ev(choices)) == primary, description="the five textured choices in Basic mode")
+    ev(f"({mode}).click()")
+    wait(lambda: ev(f"({mode})?.getAttribute('aria-pressed') === 'true'"))
+    wait(lambda: set(ev(choices)) == primary | {"triposg"}, description="TripoSG in Advanced mode")
+    ev(f"""(() => {{
+        const input = {selector};
+        input.value = 'triposg';
+        input.dispatchEvent(new Event('change', {{bubbles:true}}));
+    }})()""")
+    assert ev("document.querySelector('.generation').innerText.includes('The model generates no UV texture')")
+    ev("Array.from(document.querySelectorAll('nav button')).find(button => button.textContent.trim() === 'Art Bible').click()")
+    wait(lambda: ev("document.body.innerText.includes('Maximum Blender vertices by category')"))
+    ev(f"({mode}).click()")
+    wait(lambda: ev(f"({mode})?.getAttribute('aria-pressed') === 'false'"))
     results.update(status="passed", hardware="model recommendations in WebView2", download_plan="review before installation",
-                   modes="Basic and Advanced with persistence")
+                   modes="Five textured models in Basic, TripoSG with capability warning in Advanced", vertex_budget="Art Bible control")
 
 
 def main():

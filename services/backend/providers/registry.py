@@ -12,6 +12,7 @@ from ..locations import ROOT, configured
 Tier = Literal["LOW_VRAM", "BALANCED", "HIGH_QUALITY", "CUSTOM"]
 Evidence = Literal["measured", "documented", "estimated", "experimental", "local"]
 Operation = Literal["generate", "concept", "interpret", "preprocess", "mesh"]
+TEXTURED = {"pbr", "albedo"}
 TASKS = {"generate": "IMAGE_TO_3D", "concept": "TEXT_TO_IMAGE", "interpret": "LOCAL_LLM",
          "preprocess": "IMAGE_PREPROCESSING", "mesh": "MESH_PROCESSING"}
 WORKFLOWS = {"generate": {"pixal3d", "trellis2", "triposr", "triposg"}, "concept": {"flux-klein"}, "interpret": {"blender-edits"},
@@ -96,9 +97,12 @@ class Entry(BaseModel):
     measurement: Measurement | None = None
     commercial_game: CommercialGameUse | None = None
     manual_only: bool = False
+    output_capability: Literal["pbr", "albedo", "vertex_colors", "geometry"] | None = None
 
     @model_validator(mode="after")
     def supported(self):
+        if self.operation == "generate" and self.output_capability is None:
+            raise ValueError("Image-to-3D models must declare their generated appearance.")
         if self.capability != TASKS[self.operation] or len(self.workflow_ids) != 1 or not set(self.workflow_ids) <= WORKFLOWS[self.operation]:
             raise ValueError("Model capability and workflow do not identify a Studio adapter.")
         expected = {"generate": "local3d" if self.workflow in {"triposr", "triposg"} else "comfy",

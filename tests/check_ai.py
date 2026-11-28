@@ -13,6 +13,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("qa", type=Path)
 parser.add_argument("stage", choices=("interpret", "generate", "text3d", "text3d-output", "graph"))
 parser.add_argument("--model", default="pixal3d", help="Installed image-to-3D variant for the generate check.")
+parser.add_argument("--texture-size", type=int, choices=(256, 512, 1024, 2048))
 args = parser.parse_args()
 registry = Path(os.getenv("SOCETH_DATA", ROOT / "user_data")) / "studio.sqlite3"
 qa = args.qa.resolve()
@@ -23,8 +24,9 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from services.backend.core import TOKEN_FILE, db, project_file, query
 from services.backend.main import app
-from services.backend.media import validate_glb
+from services.backend.media import validate_glb, validate_textured_glb
 from services.backend.providers.models import CATALOG, COMFY, is_ready, local
+from services.backend.providers.registry import TEXTURED
 from services.backend.providers.workflows import flux_graph, pixal_graph, validate_graph
 
 
@@ -116,7 +118,7 @@ def run(client):
     if args.stage == "graph":
         with local(10) as comfy:
             info = comfy.get(COMFY + "/object_info").raise_for_status().json()
-        for model in ("flux-klein", "pixal3d", "trellis2-int8", "trellis2-bf16"):
+        for model in ("flux-klein", "pixal3d", "pixal3d-bf16", "trellis2-int8", "trellis2-bf16"):
             item = CATALOG[model]
             for execution in item["configs"]:
                 profile = execution["profile"]
@@ -166,10 +168,11 @@ def run(client):
         reference = concept["result"]["file"]
         assert client.get("/api/files/" + reference).content.startswith(b"\x89PNG")
         print("FLUX.2 concept verified", reference, concept["result"].get("metrics"), flush=True)
-    explicit = {"model": args.model} if args.stage == "generate" else {}
+    explicit = {"model": args.model, "source_texture_size": args.texture_size,
+                "allow_limited_3d": model["output_capability"] not in TEXTURED} if args.stage == "generate" else {}
     result = job("generate", 3600, file=reference, name="AI QA Chest", seed=172409, **explicit)["result"]
     assert result["report"]["triangles"] > 0, result
-    if args.stage != "generate" or model["provider"] != "local3d":
+    if args.stage != "generate" or model["output_capability"] in TEXTURED:
         assert result["report"]["textures_present"], result
     asset = response(client.get("/api/assets/" + result["asset"]))
     revision = next(row for row in asset["revisions"] if row["id"] == result["revision"])
@@ -182,11 +185,11 @@ def run(client):
         provenance = original["body"]["provenance"]
         assert provenance["model"]["id"] == args.model
         evidence["model"] = provenance["model"]["id"]
-        if model["workflow"] == "trellis2":
+        if model["output_capability"] in TEXTURED:
             source, _ = project_file(project, original["body"]["source"], {"source_mesh"})
-            glb = validate_glb(source)
-            assert any("TEXCOORD_0" in item.get("attributes", {}) for mesh in glb["meshes"] for item in mesh["primitives"])
-            assert any("baseColorTexture" in material.get("pbrMetallicRoughness", {}) for material in glb["materials"])
+            evidence["source_textures"] = validate_textured_glb(source, model["output_capability"])
+            if args.texture_size:
+                assert evidence["source_textures"]["base_color_sizes"] == [(args.texture_size, args.texture_size)]
     if args.stage == "text3d":
         evidence.update(concept=reference, concept_metrics=concept["result"]["metrics"])
     return evidence

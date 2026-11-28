@@ -57,7 +57,7 @@ export function JobList({jobs, cancel, retry, empty = 'No jobs yet.'}: {
 export function Inspector({report}: {report: Report}) {
   return <div className="stack tight">
     <div className="stats-grid"><div><Triangle size={15}/><strong>{report.triangles.toLocaleString()}</strong><span>Triangles</span></div>
-      <div><Box size={15}/><strong>{report.vertices.toLocaleString()}</strong><span>Vertices</span></div>
+      <div><Box size={15}/><strong>{report.vertices.toLocaleString()}</strong><span>{report.vertex_budget ? 'Vertices · max ' + report.vertex_budget.toLocaleString() : 'Vertices'}</span></div>
       <div><Layers3 size={15}/><strong>{report.object_count}</strong><span>Objects</span></div></div>
     <p className="small muted">Bounds {report.bounds[1].map((n, i) => (n - report.bounds[0][i]).toFixed(3)).join(' × ')} m · {report.uv_present ? 'UVs present' : 'Missing UVs'}</p>
     <details><summary>Objects and materials</summary><div className="stack tight detail-body">
